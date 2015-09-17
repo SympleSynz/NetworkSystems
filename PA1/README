@@ -1,0 +1,19 @@
+#CSCI 5273 - Network Systems
+#Programming Assignment 1
+
+#Compiling
+In order to compile, type "make" into the terminal.
+user@cu-cs-vm:~/PA1$ make
+
+#Cleanup
+To clean up the executable, type "clean" into the terminal.
+user@cu-cs-vm:/PA1$ clean
+
+#Project Description
+The goal of the Server.c program is to create a simple server that can handle GET requests from standard browsers.  In addition to handling the GET requests, the simple server needs to also needs to handle connection types, pipelining with a 10 second timer and error codes 400, 404, 500 and 501.
+
+Within the main(), the program binds to the given port number as defined in the ws.conf file.  If the socket is unable to be bounded, the program will automatically find an open socket and return the new port number.  From there, the program will have nested while loops, the outer is listening for requests and connections from clients, and the inner while loop will handle the actual requests.
+
+The program forks before the inner while loop so that the parent process can continue to listen for more requests as the child process fulfills the requests.
+
+Once the request from the client is parsed and the server knows what the client is looking for, the GET() will build a header to send back to the client.  The header includes the HTTP/1.1 200 OK code as well as the date, the content length, content type and the connection type that the client originally sent.  Following the header being sent, the content requested by the server is sent.  The child process will then return back to main() and wait for another request from the same file descriptor that sent the first request if the connection is keep-alive and the timer hasn't reached 10 seconds.  Otherwise, the child closes the file descriptor and exits(0).
