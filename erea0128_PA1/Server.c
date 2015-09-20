@@ -26,7 +26,7 @@
 
 
 extern int  errno;
-char    *DocumentRoot, *port, *DocIndex, *ContentType, *Connection;
+static char    *DocumentRoot, *port, *DocIndex, *ContentType, *Connection;
 
 void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
@@ -82,13 +82,15 @@ int main(void)
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE; // use my IP
 
-    if ((rv = getaddrinfo(NULL, portnum, &hints, &servinfo)) != 0) {
+    if ((rv = getaddrinfo(NULL, portnum, &hints, &servinfo)) != 0) //Attempting to bind to the given portnum
+    {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
 
     // loop through all the results and bind to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) {
+    for(p = servinfo; p != NULL; p = p->ai_next) 
+    {
         if ((sockfd = socket(p->ai_family, p->ai_socktype,
                 p->ai_protocol)) == -1) {
             perror("server: socket");
@@ -112,67 +114,72 @@ int main(void)
 
     freeaddrinfo(servinfo); // all done with this structure
 
-    if (p == NULL)  {
+    if (p == NULL)  
+    {
         fprintf(stderr, "server: failed to bind\n");
         exit(1);
     }
 
-    if (listen(sockfd, QLEN) == -1) {
+    if (listen(sockfd, QLEN) == -1) 
+    {
         perror("listen");
         exit(1);
     }
 
+    //Handling all the child processes
     sa.sa_handler = sigchld_handler; // reap all dead processes
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+    if (sigaction(SIGCHLD, &sa, NULL) == -1) 
+    {
         perror("sigaction");
         exit(1);
     }
 
     printf("server: waiting for connections...\n");
 
-    while(1) {  // main accept() loop
+    while(1) 
+    {  // main accept() loop
         sin_size = sizeof their_addr;
-        new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
+        new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size); //listening for a client
         if (new_fd == -1) {
             perror("accept");
             continue;
         }
 
-        inet_ntop(their_addr.ss_family,
+        inet_ntop(their_addr.ss_family, //tells us if we got a connection
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
         printf("server: got connection from %s\n", s);
 
-        if (!fork()) // this is the child process
+        if (!fork()) // We fork to allow the child process to complete the request
         { 
-            close(sockfd); // child doesn't need the listener
+            (void) close(sockfd); // child doesn't need the listener
             while(1)
             {   
-                struct pollfd ufds[1];
+                struct pollfd ufds[1]; //This struct is used for the poll() for timing
                 ufds[0].fd = new_fd;
                 ufds[0].events = POLLIN;
                 pollRtn = poll(ufds, 1, 10000);
-                if (pollRtn == -1)
+                if (pollRtn == -1) //Error when getting a poll
                 {
                     printf("Error when creating poll for child fork\n");
                     ErrorHandle(0, 500, new_fd, " ", " ", " ");
                 }
-                else if (pollRtn == 0)
+                else if (pollRtn == 0) //timed out
                 {
-                    printf("Timed out\n");
+                    printf("%d Timed out\n", getpid());
                     break;
                 }
-                else
+                else //Otherwise, continue with fulfilling the client request
                 {
                     if (ClientInput(new_fd) == 0) 
                         perror("send");
-                    if (strcmp(Connection, "close\r\n") == 0)
+                    if (strcmp(Connection, "close") == 0) //If the connection is close, then immediately break out
                         break;
                 }
             }
-            (void) close(new_fd);
+            (void) close(new_fd); //Close the file descriptor for the child process
             exit(0);
        }
        (void) close(new_fd);  // parent doesn't need this
@@ -188,8 +195,8 @@ int main(void)
  char *
  wsConfig()
  {
-    char *line, *string, *token; 
-    char *ws = calloc(BUFSIZE, 1);
+    char *line, *token, *string; 
+    static char ws[BUFSIZE];
     FILE *fp = fopen("ws.conf", "r");
     int index = 0;
     int index2 = 0;
@@ -197,22 +204,20 @@ int main(void)
 
     if (fp != NULL) 
     {
-        size_t newLen = fread(ws, sizeof(char), BUFSIZE, fp);
+        size_t newLen = fread(ws, sizeof(char), BUFSIZE, fp); //read in the ws.conf file
         if (newLen == 0)
             fputs("Error reading file", stderr);
-        else
-            ws[++newLen] = '\0'; /* Just to be safe. */
         fclose(fp);
     }
-    
     string = ws;
-    while((line = strsep(&string, "\n")) != NULL)
+    while((line = strsep(&string, "\n")) != NULL) //separate by newline characters
     {
-        if (line[0] != '#')
+        if (line[0] != '#') //if a comment, ignore, if not, then parse down
         {
-            if (line[0] != '.')
+            if (line[0] != '.') //This is if the start is the Connection Type
             {
-                while((token = strsep(&line, " ")) != NULL)
+                while((token = strsep(&line, " ")) != NULL) //Otherwise, we grab the specific stuff we are looking for
+                	//because of the fact we know how the ws.conf file is written
                 {   
                     if (index == 0 && index2 == 1)
                     {
@@ -220,7 +225,7 @@ int main(void)
                         index2 = 0;
                     }
                     else if (index == 1 && index2 == 1)
-                    {
+                    { //we have quotes around the document root, so we need to remove those characters
                         DocumentRoot = token;
                         DocumentRoot++;
                         length = strlen(DocumentRoot);
@@ -254,8 +259,7 @@ int main(void)
             }
         }
     }
-    free(ws);
-    return port;
+    return port; //return the port number
  }
 /*--------------------------------------------------------------------------------
  * ClientInput - ClientInput one buffer of data.  Call other functions accordingly
@@ -264,101 +268,73 @@ int main(void)
 int
 ClientInput(int fd)
 {   
-    char    buf[BUFSIZE];
-    //char    bufCpy[1];
+    static char    buf[BUFSIZE];
     int     index = 0;
     int     cc;
-    //int     i;
-    //int     bufLength;
     int     length;
     int     results;
-    //int     request;
-    //bool    reading = true;
-    //bool    sending = true;
-    char    *Method, *URI, *Version, *string, *token, *line;//, *MultReq;
+    char    *Method, *URI, *Version, *token, *line, *string;
 
-
-    /*while(sending == true)
+    cc = read(fd, buf, BUFSIZE); //read in the client header into buf
+    if (cc < 0)
     {
-        bufLength = 0;
-        while(reading == true)
-        { 
-            printf("inner while\n");
-            cc = read(fd, bufCpy, 1);
-            printf("How much got read in? %d\n", cc);
-            printf("%d\n", bufLength);
-            if (cc != 0)
-            {
-                buf[bufLength] = bufCpy[0];
-                bufLength++;
-            }
-            if (cc < 0)
-            {
-                ErrorHandle(0, 500, fd, Method, URI, Version);
-                fputs("Error reading file", stderr);
-                return 0;
-            }
-            if (bufLength == 0)
-                {printf("why aren't you going in here?\n");
-                reading = false;
-            }
-            if (buf[bufLength-1] == '\r')
-                request++;
-            else if (buf[bufLength-1] == '\n')
-                request = request + 2;
-            else
-                request = 0;
-            if ((request >= 4) || cc == 0 || buf[bufLength - 1] == '\0')
-                reading = false;
-        }
-        printf("%s\n", buf);
-        if (bufLength == 0)
-            sending = false;*/
-        cc = read(fd, buf, BUFSIZE);
-        string = buf;
-        while((line = strsep(&string, "\n")) != NULL)
-        {
-            if (index == 0)
-            {
-                while((token = strsep(&line, " ")) != NULL)
-                {
-                    if (index == 0)
-                        Method = token;
-                    else if (index == 1)
-                        URI = token;
-                    else
-                        Version = token;
-                    index++;
-                }
-                index = 0;
-            }
-            else
-                while((token = strsep(&line, " ")) != NULL)
-                {
-                    if(token[0] == 'k')
-                        Connection = token;
-                }
-            index++;
-        }
+        return ErrorHandle(0, 500, fd, Method, URI, Version);
+        fputs("Error reading file", stderr);
+    }
+    string = buf; //we need a pointer to parse through the buf
 
-        if (Version != NULL);
-        {   
-            length = strlen(Version); 
-            if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
-                Version[length-1] = '\0';
+    while((line = strsep(&string, "\n")) != NULL) //separate by new line characters
+    {
+        if (index == 0) //if it is the first line, then we separate by the white space
+        {
+            while((token = strsep(&line, " ")) != NULL)
+            {
+                if (index == 0)
+                    Method = token;
+                else if (index == 1)
+                    URI = token;
+                else
+                    Version = token;
+                index++;
+            }
+            index = 0;
         }
-        
-        if (strcmp(Method,"GET") != 0)
-            results = ErrorHandle(1, 400, fd, Method, URI, Version);
-        else if (strstr(URI, "//"))
-            results = ErrorHandle(2, 400, fd, Method, URI, Version);
-        else if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
-            results = ErrorHandle(3, 400, fd, Method, URI, Version);
-        else
-            results = GET(fd, Method, URI, Version);
-        //free(buf);
-        //reading = true;
-    //}
+        else //otherwise, we are just looking for the connection
+            {
+            	if(strstr(line, "keep-alive"))
+			    	Connection = "keep-alive";
+			    else if(strstr(line, "Keep-alive"))
+			    	Connection = "keep-alive";
+			    else if(strstr(line, "keep-Alive"))
+			    	Connection = "keep-alive";
+			    else if(strstr(line, "closed"))
+			    	Connection = "close";
+			    else if(strstr(line, "Closed"))
+			    	Connection = "close";
+			    else if(strstr(line, "close"))
+			    	Connection = "close";
+			    else if(strstr(line, "Close"))
+			    	Connection = "close";
+            }
+        index++;
+    }
+
+    if (Version != NULL) //Need to remove the return and newline characters to do a comparison for 400 error
+    {   
+        length = strlen(Version); 
+        if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
+            Version[length-1] = '\0';
+    }
+    //Checking my 400 errors
+    if (strcmp(Method,"GET") != 0)
+        results = ErrorHandle(1, 400, fd, Method, URI, Version);
+    else if (strstr(URI, "//") || strstr(URI, "[") || strstr(URI, "]"))
+        results = ErrorHandle(2, 400, fd, Method, URI, Version);
+    else if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
+        results = ErrorHandle(3, 400, fd, Method, URI, Version);
+    else
+        results = GET(fd, Method, URI, Version); //If no 400 error, move on to the request
+
     return results;
 }
 
@@ -371,11 +347,10 @@ GET(int fd, char* Method, char* URI, char* Version)
 {
     char *root = calloc(strlen(DocumentRoot)+strlen(URI)+10, 1);
     char *OK, *ext, *cTime; 
-    char Date[60] = "Date: ";
-    char *ContType = calloc(60,1);
-    char *len = calloc(BUFSIZE + 60,1);
-    char *Connect = calloc(60,1);
-    char *line = calloc(1024,1);
+    static char Date[60] = "Date: ";
+    static char ContType[60];
+    static char len[BUFSIZE];
+    static char Connect[60];
     long long length;
     long long cc;
     time_t currentTime;
@@ -383,8 +358,8 @@ GET(int fd, char* Method, char* URI, char* Version)
     wsConfig();
     memcpy(root, DocumentRoot, strlen(DocumentRoot));
 
-    if (strcmp(URI, "/") == 0)
-    {   
+    if (strcmp(URI, "/") == 0) //If no specific URL is passed in, return the index.html
+    {   //We have to build the header first
         //Response code
         OK = "HTTP/1.1 200 OK\r\n";
 
@@ -400,13 +375,13 @@ GET(int fd, char* Method, char* URI, char* Version)
         fp = fopen(root, "rb");
         //Content-Length
         fseek(fp, 0, SEEK_END);
-        length = ftell(fp);
+        length = ftell(fp); //gives us the length of the file being returned
         rewind(fp);
 
         struct stat st;
         stat(root, &st);
 
-        char* html = calloc(st.st_size,1);
+        char* html = calloc(st.st_size,1);      
         size_t bytes = fread(html, 1, st.st_size, fp);
         char *ContLength = calloc(bytes,1);
         snprintf(ContLength, sizeof ContLength, "%zu", st.st_size);
@@ -420,11 +395,7 @@ GET(int fd, char* Method, char* URI, char* Version)
         //Connection
         memcpy(Connect, "Connection: ", 12);
         cc = strlen(Connection);
-
-        if (Connection != NULL)
-            memcpy(Connect + strlen(Connect), Connection, strlen(Connection)-1);
-        else
-            memcpy(Connect + strlen(Connect), "closed", 6);
+        memcpy(Connect + strlen(Connect), Connection, strlen(Connection));
 
         //Sending the build header
         int HeaderSize = strlen(OK) + strlen(Date) + strlen(ContType) + strlen(len) + strlen(Connect) + 4;
@@ -439,51 +410,53 @@ GET(int fd, char* Method, char* URI, char* Version)
         header[strlen(header)] = '\r';
         header[strlen(header)] = '\n';
 
-        printf("Sending the header\n%s", header);
-        send(fd, header, HeaderSize, 0);
-        cc = send(fd, html, length, 0);
+        send(fd, header, HeaderSize, 0); //Send the header first
+        cc = send(fd, html, length, 0); //Then send the content
+
         free(html);
+        html = NULL;
         free(header);
+        header = NULL;
         free(ContLength);
+        ContLength = NULL;
     }
-    else
+    else //This is grabbing the specific URL content
     {
         //Checking the content-type
         ext = strrchr(URI, '.');
-        if (strstr(ContentType, ext))
+        if (ext == NULL)
+            return ErrorHandle(2, 400, fd, Method, URI, Version);
+        if (strstr(ContentType, ext)) //Have to verify that the ext is actually implemented
         {
             if (strcmp(ext, ".html") == 0)
-                (char*)memcpy(ContType, "Content-Type: text/html\r\n", 25);
+                memcpy(ContType, "Content-Type: text/html\r\n", 25);
             else if (strcmp(ext, ".htm") == 0)
-                (char*)memcpy(ContType, "Content-Type: text/html\r\n", 25);
+                memcpy(ContType, "Content-Type: text/html\r\n", 25);
             else if (strcmp(ext, ".txt") == 0)
-                (char*)memcpy(ContType, "Content-Type: text/plain\r\n", 26);
+                memcpy(ContType, "Content-Type: text/plain\r\n", 26);
             else if (strcmp(ext, ".png") == 0)
-                (char*)memcpy(ContType, "Content-Type: image/png\r\n", 25);
+                memcpy(ContType, "Content-Type: image/png\r\n", 25);
             else if (strcmp(ext, ".gif") == 0)
-                (char*)memcpy(ContType, "Content-Type: image/gif\r\n", 25);
+                memcpy(ContType, "Content-Type: image/gif\r\n", 25);
             else if (strcmp(ext, ".jpg") == 0)
-                (char*)memcpy(ContType, "Content-Type: image/jpg\r\n", 25);
+                memcpy(ContType, "Content-Type: image/jpg\r\n", 25);
             else if (strcmp(ext, ".css") == 0)
-                (char*)memcpy(ContType, "Content-Type: text/css\r\n", 24);
+                memcpy(ContType, "Content-Type: text/css\r\n", 24);
             else if (strcmp(ext, ".js") == 0)
-                (char*)memcpy(ContType, "Content-Type: text/javascript\r\n", 31);
+                memcpy(ContType, "Content-Type: text/javascript\r\n", 31);
             else
-                (char*)memcpy(ContType, "Content-Type: image/x-icon\r\n", 28);
+                memcpy(ContType, "Content-Type: image/x-icon\r\n", 28);
         }
-        else
+        else //If not, send a 501 error
             return ErrorHandle(0, 501, fd, Method, URI, Version);
         strcat(root, URI);
 
-        /*if (fopen(path, "rb") == NULL)
-            return ErrorHandle(2, 400, fd, Method, URI, Version);*/
-        fp = fopen(root, "rb");
+        fp = fopen(root, "rb"); //If we can't open the file, then it doesn't exist
         if (fp == NULL)
             return ErrorHandle(0, 404, fd, Method, URI, Version);
         fseek(fp, 0, SEEK_END);
         length = ftell(fp);
-        /*if (length == 0)
-            return ErrorHandle(0, 404, fd, Method, URI, Version);*/
+
         rewind(fp);
         struct stat st;
         stat(root, &st);
@@ -491,60 +464,58 @@ GET(int fd, char* Method, char* URI, char* Version)
         char* html = calloc(st.st_size,1);
         size_t bytes = fread(html, 1, st.st_size, fp);
 
-        char *ContLength = calloc(bytes,1);
+        char *ContLength = calloc(bytes,1);    
         snprintf(ContLength, sizeof ContLength, "%zu", st.st_size);
 
         fclose(fp);
+
         //Response code
         OK = "HTTP/1.1 200 OK\r\n";
 
         //Date
         currentTime = time(NULL);
         cTime = ctime(&currentTime);
-        (char*)memcpy(Date + (strlen(Date)), cTime, strlen(cTime));
+        memcpy(Date + (strlen(Date)), cTime, strlen(cTime));
         
         //Content-Length
-        (char*)memcpy(len, "Content-Length: ", 16);
-        (char*)memcpy(len + strlen(len), ContLength, strlen(ContLength));
+        memcpy(len, "Content-Length: ", 16);
+        memcpy(len + strlen(len), ContLength, strlen(ContLength));
         len[strlen(len)] = '\r';
         len[strlen(len)] = '\n';
         
         //Connection
-        (char*)memcpy(Connect, "Connection: ", 12);
-        if (Connection != NULL)
-            (char*)memcpy(Connect + strlen(Connect), Connection, strlen(Connection)-1);
-        else
-            (char*)memcpy(Connect + strlen(Connect), "closed", 6);
+        memcpy(Connect, "Connection: ", 12);
+        memcpy(Connect + strlen(Connect), Connection, strlen(Connection));
 
         cc = strlen(Connection);
 
         //Sending the header
         int HeaderSize = strlen(OK) + strlen(Date) + strlen(ContType) + strlen(len) + strlen(Connect) + 4;
         char * header = calloc(HeaderSize,1);
-        (char*)memcpy(header, OK, strlen(OK));
-        (char*)memcpy(header+strlen(header), Date, strlen(Date));
-        (char*)memcpy(header+strlen(header), ContType, strlen(ContType));
-        (char*)memcpy(header+strlen(header), len, strlen(len));
-        (char*)memcpy(header+strlen(header), Connect, strlen(Connect));
+        memcpy(header, OK, strlen(OK));
+        memcpy(header+strlen(header), Date, strlen(Date));
+        memcpy(header+strlen(header), ContType, strlen(ContType));
+        memcpy(header+strlen(header), len, strlen(len));
+        memcpy(header+strlen(header), Connect, strlen(Connect));
         header[strlen(header)] = '\r';
         header[strlen(header)] = '\n';
         header[strlen(header)] = '\r';
         header[strlen(header)] = '\n';
 
-        printf("Sending the header\n%s", header);
+        //printf("Sending the header\n%s", header);
         send(fd, header, HeaderSize, 0);
 
         cc = send(fd, html, length, 0);
-
         free(html);
+        html = NULL;
         free(header);
+        header = NULL;
         free(ContLength);
+        ContLength = NULL;
     }
+
     free(root);
-    free(ContType);
-    free(len);
-    free(Connect);
-    free(line);
+    root = NULL;
     return cc;
 
 }
@@ -557,6 +528,9 @@ int
 ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
 {
     char error[BUFSIZE];
+    char errorMsg[BUFSIZE];
+    char length[256]; 
+    //have to build the header to send back to the client even for the error
     if (code == 400)
     {   
         if (d == 1)
@@ -582,18 +556,28 @@ ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
         memcpy(error + strlen(error), URI, strlen(URI));
     }
     else if (code == 500)
-        memcpy(error, "HTTP/1.1 500 Internal Server Error", 34);
+    {
+        memcpy(error, "HTTP/1.1 500 Internal Server Error", 33);
+        memcpy(errorMsg, error, strlen(error));
+    }
     else
     {
         memcpy(error, "HTTP/1.1 501 Not Implemented: ", 30);
         memcpy(error + strlen(error), URI, strlen(URI));
     }
+    memcpy(errorMsg, "<html><em> ", 11);
+    memcpy(errorMsg + strlen(errorMsg), error, strlen(error));
+    memcpy(errorMsg + strlen(errorMsg), " </em></html>", 13);
+    sprintf(length, "%ld", strlen(errorMsg));
+    
+    error[strlen(error)] = '\n';    
+    memcpy(error + strlen(error), "Content-type: text/html\n", 24);
+    memcpy(error + strlen(error), "Content-length: ", 16);
+    memcpy(error + strlen(error), length, strlen(length));
 
-    error[strlen(error)] = '\r';
     error[strlen(error)] = '\n';
-    error[strlen(error)] = '\r';
     error[strlen(error)] = '\n';
     send(fd, error, strlen(error), 0);
-    printf("%s\n", error);
+    send(fd, errorMsg, strlen(errorMsg), 0);
     return 0;
 }
