@@ -281,6 +281,7 @@ ClientInput(int fd)
         return ErrorHandle(0, 500, fd, Method, URI, Version);
         fputs("Error reading file", stderr);
     }
+
     string = buf; //we need a pointer to parse through the buf
 
     while((line = strsep(&string, "\n")) != NULL) //separate by new line characters
@@ -315,6 +316,8 @@ ClientInput(int fd)
 			    	Connection = "close";
 			    else if(strstr(line, "Close"))
 			    	Connection = "close";
+                else
+                    Connection = "close";
             }
         index++;
     }
@@ -361,7 +364,7 @@ GET(int fd, char* Method, char* URI, char* Version)
     if (strcmp(URI, "/") == 0) //If no specific URL is passed in, return the index.html
     {   //We have to build the header first
         //Response code
-        OK = "HTTP/1.1 200 OK\r\n";
+        //OK = "HTTP/1.1 200 OK\r\n";
 
         //Date
         currentTime = time(NULL);
@@ -398,9 +401,10 @@ GET(int fd, char* Method, char* URI, char* Version)
         memcpy(Connect + strlen(Connect), Connection, strlen(Connection));
 
         //Sending the build header
-        int HeaderSize = strlen(OK) + strlen(Date) + strlen(ContType) + strlen(len) + strlen(Connect) + 4;
+        //int HeaderSize = strlen(OK) + strlen(Date) + strlen(ContType) + strlen(len) + strlen(Connect) + 4;
+        int HeaderSize = strlen(Date) + strlen(ContType) + strlen(len) + strlen(Connect) + 4;
         char* header = calloc(HeaderSize,1);
-        memcpy(header, OK, strlen(OK));
+        //memcpy(header, OK, strlen(OK));
         memcpy(header+strlen(header), Date, strlen(Date));
         memcpy(header+strlen(header), ContType, strlen(ContType));
         memcpy(header+strlen(header), len, strlen(len));
