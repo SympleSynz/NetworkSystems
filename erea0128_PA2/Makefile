@@ -1,13 +1,13 @@
 all: Server Client
 
-Server: Server.c
-	gcc -Wall Server.c -o Server -lcrypto -lssl
+Server: dfs.c
+	gcc -Wall dfs.c -o dfs -lcrypto -lssl
 
-Client: Client.c
-	gcc -Wall Client.c -o Client -lcrypto -lssl
+Client: dfc.c
+	gcc -Wall dfc.c -o dfc -lcrypto -lssl
 
 .PHONY: clean
 
 clean:
-	rm -f Server
-	rm -f Client
+	rm -f dfs
+	rm -f dfc
