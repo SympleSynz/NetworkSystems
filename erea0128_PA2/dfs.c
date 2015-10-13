@@ -38,24 +38,29 @@ struct conf parseConfig();
 
 void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
-/*void GET();
-void PUT();
-void LIST();*/
+//void GET();
+void PUT(char Root[50], int fd);
+//void LIST();
 
 int main(int argc, char* argv[])
 {
 	struct conf authorized;
 	authorized = parseConfig();
 
-	int dfs, new_fd;  // listen on sock_fd, new connection on new_fd
+	int dfs, new_fd, rv, bytes, AuthBool, pollRtn;  
     struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; // connector's address information
+    struct sockaddr_storage their_addr; 
     socklen_t sin_size;
     struct sigaction sa;
+    struct stat sb;
     int yes = 1;
     char s[INET6_ADDRSTRLEN];
-    int rv;
-    //int pollRtn;
+    //char buffer[BUFSIZE];
+    char Root[50];
+    char UserBuf[BUFSIZE];
+    char PassBuf[BUFSIZE];
+    char RequestType[4];
+
     if(argc < 3)
     {
     	fprintf(stderr, "\nIncorrect number of arguments\n");
@@ -63,6 +68,8 @@ int main(int argc, char* argv[])
     }
     strcpy(authorized.Root, ".");
     strcat(authorized.Root, argv[1]);
+    strcat(authorized.Root, "/");
+    mkdir(authorized.Root, 0777);
     char *portnum = argv[2];
 
     memset(&hints, 0, sizeof hints);
@@ -70,13 +77,13 @@ int main(int argc, char* argv[])
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE; // use my IP
 
-    //DFS binding to socket
+//DFS binding to socket
     if ((rv = getaddrinfo(NULL, portnum, &hints, &servinfo)) != 0) //Attempting to bind to portnum
     {
         fprintf(stderr, "\ngetaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
-    // loop through all the results and bind to the first we can
+// loop through all the results and bind to the first we can
     for(p = servinfo; p != NULL; p = p->ai_next) 
     {
         if ((dfs = socket(p->ai_family, p->ai_socktype,
@@ -113,7 +120,7 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    //Handling all the child processes
+//Handling all the child processes
     sa.sa_handler = sigchld_handler; // reap all dead processes
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
@@ -124,9 +131,9 @@ int main(int argc, char* argv[])
     }
 
     printf("\nserver port %s: waiting for connections...\n", argv[2]);
-
+// main accept() loop for dfs
     while(1) 
-    {  // main accept() loop for dfs
+    {  
         sin_size = sizeof their_addr;
         new_fd = accept(dfs, (struct sockaddr *)&their_addr, &sin_size); //listening for a client
         if (new_fd == -1) 
@@ -139,8 +146,79 @@ int main(int argc, char* argv[])
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
         printf("server port %s: got connection from %s\n", argv[2], s);
+//Checking Authorization
+        AuthBool = 0;
+        memset(UserBuf, 0, BUFSIZE);
+        memset(Root, 0, 50);
+        strcpy(Root, authorized.Root);
+        bytes = read(new_fd, UserBuf, BUFSIZE);
+    	if (bytes < 0)
+    		fputs("Error reading file", stderr);
+    	//printf("%s\n", UserBuf);
+    	if(strcmp(UserBuf, authorized.Username) == 0)
+    	{
+			send(new_fd, "Authorized User", 15, 0);
+			memset(PassBuf, 0, BUFSIZE);
+	        bytes = read(new_fd, PassBuf, BUFSIZE);
+	        //printf("%s\n", PassBuf);
+	    	if (bytes < 0)
+	    		fputs("Error reading file", stderr);
+	    	if(strcmp(PassBuf, authorized.Password) == 0)
+	    	{
+	    		strcat(Root, authorized.Username);
+	    		mkdir(Root, 0777);	    		
+    			send(new_fd, "Authorized Password", 19, 0);
+    			AuthBool = 1;
+    		}
+    		else if(strcmp(PassBuf, authorized.Password2) == 0)
+	    	{
+	    		strcat(Root, authorized.Username);	
+	    		mkdir(Root, 0777);    		
+    			send(new_fd, "Authorized Password", 19, 0);
+    			AuthBool = 1;
+    		}
+	    	else
+	    	{
+    			send(new_fd, "Invalid Password", 16, 0);
+    			close(new_fd);
+	    	}
+	    }
+    	else if(strcmp(UserBuf, authorized.Username2) == 0)
+    	{
+			send(new_fd, "Authorized User", 15, 0);
+			memset(PassBuf, 0, BUFSIZE);
+	        bytes = read(new_fd, PassBuf, BUFSIZE);
+	    	if (bytes < 0)
+	    		fputs("Error reading file", stderr);
+	    	//printf("%s\n", PassBuf);
+	    	if(strcmp(PassBuf, authorized.Password) == 0)
+	    	{
+	    		strcat(Root, authorized.Username2);	
+	    		mkdir(Root, 0777);    		
+    			send(new_fd, "Authorized Password", 19, 0);
+    			AuthBool = 1;
+    		}
+    		else if(strcmp(PassBuf, authorized.Password2) == 0)
+	    	{
+	    		strcat(Root, authorized.Username2);	 
+	    		mkdir(Root, 0777);   		
+    			send(new_fd, "Authorized Password", 19, 0);
+    			AuthBool = 1;
+    		}
+	    	else
+	    	{
+    			send(new_fd, "Invalid Password", 16, 0);
+    			close(new_fd);
+	    	}
+	    }
+    	else
+    	{
+			send(new_fd, "Invalid Password", 16, 0);
+			close(new_fd);
+    	}
 
-/*	        if (!fork()) // We fork to allow the child process to complete the request
+//Start listening for content
+		if (!fork() && AuthBool) // We fork to allow the child process to complete the request
         { 
             (void) close(dfs); // child doesn't need the listener
             while(1)
@@ -148,12 +226,9 @@ int main(int argc, char* argv[])
                 struct pollfd ufds[1]; //This struct is used for the poll() for timing
                 ufds[0].fd = new_fd;
                 ufds[0].events = POLLIN;
-                pollRtn = poll(ufds, 1, 10000);
+                pollRtn = poll(ufds, 1, 1000);
                 if (pollRtn == -1) //Error when getting a poll
-                {
-                    printf("Error when creating poll for child fork\n");
-                    ErrorHandle(0, 500, new_fd, " ", " ", " ");
-                }
+                    printf("Error when creating poll for child fork\n");   
                 else if (pollRtn == 0) //timed out
                 {
                     printf("%d Timed out\n", getpid());
@@ -161,17 +236,32 @@ int main(int argc, char* argv[])
                 }
                 else //Otherwise, continue with fulfilling the client request
                 {
-                    if (ClientInput(new_fd) == 0) 
-                        perror("send");
-                    if (strcmp(Connection, "close") == 0) //If the connection is close, then immediately break out
-                        break;
+                	memset(RequestType, 0, 4);
+            		read(new_fd, RequestType, 4);
+                    if (strcmp(RequestType, "GET") == 0)
+                    {
+
+                    }
+                    else if (strcmp(RequestType, "PUT") == 0)
+                    {
+                    	PUT(Root, new_fd);
+                    } 
+                    else if (strcmp(RequestType, "LIST") == 0)
+                    {
+                        
+                    }
                 }
             }
             (void) close(new_fd); //Close the file descriptor for the child process
             exit(0);
-       }*/
+       }
        (void) close(new_fd);  // parent doesn't need this
     }
+}
+
+void Request(char Root[50], int fd)
+{
+
 }
 
 void sigchld_handler(int s)
@@ -234,13 +324,94 @@ struct conf parseConfig()
 {
 
 }
+*/
+void PUT(char Root[50], int fd)
+{
+	int PieceSize;
+	int NameSize;
+	char *FileRoot = calloc(50, 1);
+	int bytes;
+	
+	//Receiving the first piece
+	memcpy(FileRoot, Root, strlen(Root));
+	bytes = read(fd, (char*) &PieceSize, sizeof(PieceSize));
+	if (bytes < 0)
+		printf("Error reading in Piece Size\n");
 
+	char *MsgSize = calloc(PieceSize, 1);
+	bytes = read(fd, MsgSize, PieceSize);
+	if (bytes < 0)
+		printf("Error reading in Msg Size\n");
+	
+	int ContentSize = atoi(MsgSize);
+	bytes = read(fd, (char*) &NameSize, sizeof(NameSize));
+	if (bytes < 0)
+		printf("Error reading in Filename Size\n");
+
+	char *filename = calloc(NameSize, 1);
+	bytes = read(fd, filename, NameSize);
+	if (bytes < 0)
+		printf("Error reading in file name\n");
+
+	char *ContentPiece = calloc(ContentSize, 1);
+	bytes = read(fd, ContentPiece, ContentSize);
+	if (bytes < 0)
+		printf("Error reading in file\n");
+
+	memcpy(FileRoot+strlen(FileRoot), filename, strlen(filename));
+	FILE *fp = fopen(FileRoot, "w");
+	if (fp == NULL)
+		printf("Error opening %s\n", filename);
+	fprintf(fp, ContentPiece);
+	fclose(fp);
+	free(ContentPiece);
+	free(filename);
+	free(MsgSize);
+	free(FileRoot);
+
+	//Receiving the 2nd piece
+	FileRoot = calloc(50, 1);
+	memcpy(FileRoot, Root, strlen(Root));
+
+	bytes = read(fd, (char*) &PieceSize, sizeof(PieceSize));
+	if (bytes < 0)
+		printf("Error reading in Piece Size\n");
+
+	MsgSize = calloc(PieceSize, 1);
+	bytes = read(fd, MsgSize, PieceSize);
+	if (bytes < 0)
+		printf("Error reading in Msg Size\n");
+	
+	PieceSize = atoi(MsgSize);
+	bytes = read(fd, (char*) &NameSize, sizeof(NameSize));
+	if (bytes < 0)
+		printf("Error reading in Filename Size\n");
+
+	filename = calloc(NameSize, 1);
+	bytes = read(fd, filename, NameSize);
+	if (bytes < 0)
+		printf("Error reading in file name\n");
+
+	ContentPiece = calloc(PieceSize, 1);
+	bytes = read(fd, ContentPiece, PieceSize);
+	if (bytes < 0)
+		printf("Error reading in file\n");
+
+	memcpy(FileRoot+strlen(FileRoot), filename, strlen(filename));
+	fp = fopen(FileRoot, "w");
+	if (fp == NULL)
+		printf("Error opening %s\n", filename);
+	fprintf(fp, ContentPiece);
+	fclose(fp);
+	free(ContentPiece);
+	free(filename);
+	free(MsgSize);
+	free(FileRoot);
+
+}
+/*
 void LIST()
 {
 
 }
-
-void PUT()
-{
-	
-}*/
+*/

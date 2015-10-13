@@ -36,34 +36,48 @@ struct conf
 	char *Username;
 	char *Password;
 };
-struct conf parseConfig();
+struct conf parseConfig(char *filename);
 int hashDist(const char *filename);
 int	errexit(const char *format, ...);
 int	connectsock(const char *host, const char *portnum);
-void GET(const char *auth, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
-void PUT(const char *auth, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
-void LIST(const char *auth, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
+void GET(struct conf dfcConfig, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
+void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
+void LIST(struct conf dfcConfig, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
 
 int main(int argc, char* argv[])
 {
 	struct conf dfcConfig;
 	char *buf = calloc(BUFSIZE, 1);
-	char *string, *line, *token, *request, *auth;
-	int	dfs1, dfs2, dfs3, dfs4;
+	char *AuthBuf = calloc(BUFSIZE, 1);
+	char *string, *line, *token, *request;
+	int	dfs1, dfs2, dfs3, dfs4, sentAuth;
 	char *filename = "\0";
 	char *host = "localhost";
 	int count = 0;
-	
-	dfcConfig = parseConfig();
-	auth = dfcConfig.Username;
-	strcat(auth, " ");
-	strcat(auth, dfcConfig.Password);
 
-	dfs1 = connectsock(host, dfcConfig.DFS1);
+	dfcConfig = parseConfig(argv[1]);
+	/*dfs1 = connectsock(host, dfcConfig.DFS1);
 	dfs2 = connectsock(host, dfcConfig.DFS2);
 	dfs3 = connectsock(host, dfcConfig.DFS3);
-	dfs4 = connectsock(host, dfcConfig.DFS4);
+	dfs4 = connectsock(host, dfcConfig.DFS4);*/
 
+	/*sentAuth = send(dfs1, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 1\n");
+	
+	sentAuth = read(dfs1, AuthBuf, BUFSIZE);
+	printf("%s\n", AuthBuf);
+
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs1, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 1\n");
+		
+		sentAuth = read(dfs1, AuthBuf, BUFSIZE);
+		printf("%s\n", AuthBuf);
+	}*/
+	
 	while (fgets(buf, BUFSIZE, stdin)) 
 	{
 		buf[strlen(buf)-1] = '\0';	/* make sure line null-terminated	*/
@@ -80,48 +94,39 @@ int main(int argc, char* argv[])
 			}
 			count = 0;
 		}
-
 		if (strcmp(request, "GET") == 0)
 		{
 			if(strcmp(filename, "\0") != 0)
-				GET(auth, filename, dfs1, dfs2, dfs3, dfs4);
+				GET(dfcConfig, filename, dfs1, dfs2, dfs3, dfs4);
 			else
 				printf("No filename given\n");	
 		}
 		else if (strcmp(request, "PUT") == 0)
 		{	
 			if(strcmp(filename, "\0") != 0)
-				PUT(auth, filename, dfs1, dfs2, dfs3, dfs4);
+			{
+				dfs1 = connectsock(host, dfcConfig.DFS1);
+				PUT(dfcConfig, filename, dfs1, dfs2, dfs3, dfs4);
+			}
 			else
 				printf("No filename given\n");
 		}
 		else if (strcmp(request, "LIST") == 0)
-			LIST(auth, dfs1, dfs2, dfs3, dfs4);
+			LIST(dfcConfig, dfs1, dfs2, dfs3, dfs4);
 		else
 			printf("Invalid request\n");
 		filename = "\0";
-		//outchars = strlen(buf);
-		//(void) write(s, buf, outchars);
-
-		/* read it back */
-		/*for (inchars = 0; inchars < outchars; inchars+=n ) {
-			n = read(s, &buf[inchars], outchars - inchars);
-			if (n < 0)
-				errexit("socket read failed: %s\n",
-					strerror(errno));
-		}*/
-		//fputs(buf, stdout);
 	}
 	return 0;
 }
 
-struct conf parseConfig()
+struct conf parseConfig(char* filename)
 {
 	char *line;
 	char *source = calloc(BUFSIZE, 1);
 	int count = 0;
 	struct conf configFile;
-	FILE *dfcConfig = fopen("dfc.conf", "r"); //open the config file
+	FILE *dfcConfig = fopen(filename, "r"); //open the config file
 
 	if (dfcConfig != NULL)
     {
@@ -192,9 +197,9 @@ int hashDist(const char *filename)
 			i++;
 		}
 	    printf (" %s\n", filename);*/
-	    printf("%02x = %u\n", hash[MD5_DIGEST_LENGTH - 1], hash[MD5_DIGEST_LENGTH - 1]);
-	    mdhash = hash[MD5_DIGEST_LENGTH - 1];
-	    printf("%d\n", mdhash);
+	    //printf("%02x = %u\n", hash[MD5_DIGEST_LENGTH - 1], hash[MD5_DIGEST_LENGTH - 1]);
+	    mdhash = hash[MD5_DIGEST_LENGTH - 1] % 4;
+	    //printf("%d\n", mdhash);
 	    fclose (fp);
 
 	    return mdhash;
@@ -202,8 +207,8 @@ int hashDist(const char *filename)
 	return -1;
 }
 
-void GET(const char *auth, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4)
-{
+void GET(struct conf dfcConfig, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4)
+{/*
 	//char *line, *token;
 	char *header = calloc(BUFSIZE, 1);
 	char *S1Content1 = calloc(BUFSIZE, 1);
@@ -234,7 +239,7 @@ void GET(const char *auth, const char *filename, const int dfs1, const int dfs2,
 	strcat(Root, filename);
 	strcat(getRequest, filename);
 
-/*----------------------Server 1--------------------------------*/
+/*----------------------Server 1--------------------------------
 	sentAuth = send(dfs1, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -299,7 +304,7 @@ void GET(const char *auth, const char *filename, const int dfs1, const int dfs2,
 	}
 	else
 		fail++;
-/*----------------------Server 2--------------------------------*/
+/*----------------------Server 2--------------------------------
 	sentAuth = send(dfs2, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -360,7 +365,7 @@ void GET(const char *auth, const char *filename, const int dfs1, const int dfs2,
 	}
 	else
 		fail++;
-/*----------------------Server 3--------------------------------*/
+/*----------------------Server 3--------------------------------
 	sentAuth = send(dfs3, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -421,7 +426,7 @@ void GET(const char *auth, const char *filename, const int dfs1, const int dfs2,
 	}
 	else
 		fail++;
-/*----------------------Server 4--------------------------------*/
+/*----------------------Server 4--------------------------------
 	sentAuth = send(dfs4, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -482,7 +487,7 @@ void GET(const char *auth, const char *filename, const int dfs1, const int dfs2,
 	}
 	else
 		fail++;
-/*---------Start putting the content back together--------------*/
+/*---------Start putting the content back together--------------
 	if (fail > 1)
 	{
 		printf("File is incomplete\n");
@@ -580,9 +585,9 @@ void GET(const char *auth, const char *filename, const int dfs1, const int dfs2,
 			strcat(FileContent, S3Content4);
 		else
 			strcat(FileContent, S2Content4);
-/*-------------------Decrypt FileContent------------------------*/
+/*-------------------Decrypt FileContent------------------------
 
-/*------------Write file and content to directory---------------*/
+/*------------Write file and content to directory---------------
 	fp = fopen(Root, "w");
 	fputs(FileContent, fp);
 	fclose(fp);
@@ -605,24 +610,312 @@ void GET(const char *auth, const char *filename, const int dfs1, const int dfs2,
 	free(S4Content3);
 	free(S4Content4);
 	free(AuthBuf);
-
+*/
 }
 
-void PUT(const char *auth, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4)
+void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4)
 {
-	int dist = hashDist(filename);
+	struct stat st;
+	char root[50];
+	char FileNameToSend[50];
+	char MsgSize[15];
+	char LastMsgSize[15];
+	char *AuthBuf = calloc(BUFSIZE, 1);
+	int PieceSize, dist, LastSize, sentAuth;
+	
+	strcpy(root, "./");
+	strcat(root, filename);
 
-	if(dist == -1)
+	FILE *fp = fopen(root, "rb");
+	
+	if (fp != NULL)
+		dist = hashDist(filename);
+	else
 	{
 		printf("%s does not exist\n", filename);
 		return;
 	}
 
+	stat(root, &st);
+	PieceSize = st.st_size/4 + 1;
+	LastSize = PieceSize + 4;
+    
+    char *part1 = calloc(PieceSize, 1);
+    char *part2 = calloc(PieceSize, 1);
+    char *part3 = calloc(PieceSize, 1);
+    char *part4 = calloc(LastSize, 1);
+    
+    fgets(part1, PieceSize, fp);
+    fgets(part2, PieceSize, fp);
+    fgets(part3, PieceSize, fp);
+    fgets(part4, LastSize, fp);
+    fclose(fp);
+    int PartSize = strlen(part1);
+   	sprintf(MsgSize, "%d", PartSize);
+   	printf("MsgSize %s\n", MsgSize);
+   	int Msg = strlen(MsgSize);
+
+   	int LastPartSize = strlen(part4);
+    sprintf(LastMsgSize, "%d", LastPartSize);
+
+    strcpy(FileNameToSend, "/.");
+	strcat(FileNameToSend, filename);
+	strcat(FileNameToSend, ".1");
+	int FileNameLength = strlen(FileNameToSend);
+
+
+/*----------------------Server 1--------------------------------*/
+	sentAuth = send(dfs1, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 1\n");
+	
+	sentAuth = read(dfs1, AuthBuf, BUFSIZE);
+	printf("%s\n", AuthBuf);
+
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs1, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 1\n");
+		
+		sentAuth = read(dfs1, AuthBuf, BUFSIZE);
+		printf("%s\n", AuthBuf);
+		
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs1, "PUT", 3, 0);
+			switch(dist)
+			{
+				case 0 ://dfs1 (1,2)
+					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs1, part1, strlen(part1), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '2';
+					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs1, part2, strlen(part2), 0);
+
+				case 1 ://dfs1 (2,3)
+					FileNameToSend[strlen(FileNameToSend)-1] = '2';					
+					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs1, part2, strlen(part2), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';
+					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs1, part3, strlen(part3), 0);
+
+				case 2 ://dfs1 (3,4)
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';					
+					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs1, part3, strlen(part3), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '4';
+					send(dfs1, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs1, part4, strlen(part4), 0);
+
+				case 3 ://dfs1 (4,1)
+					FileNameToSend[strlen(FileNameToSend)-1] = '4';
+					send(dfs1, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs1, part4, strlen(part4), 0);
+
+					FileNameToSend[strlen(FileNameToSend)-1] = '1';
+					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);	
+					send(dfs1, part1, strlen(part1), 0);
+			}
+		}
+	}
+/*----------------------Server 2--------------------------------*/
+/*	sentAuth = send(dfs2, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 2\n");
+	
+	sentAuth = read(dfs2, AuthBuf, BUFSIZE);
+	printf("%s\n", AuthBuf);
+
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs2, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 2\n");
+		
+		sentAuth = read(dfs2, AuthBuf, BUFSIZE);
+		printf("%s\n", AuthBuf);
+
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs2, "PUT", 3, 0);
+			switch(dist)
+			{
+				case 0 ://dfs2 (2,3)
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 1 ://dfs2 (3,4)
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					LastSize = st.st_size - (3*PieceSize);
+					sprintf(LastMsgSize, "%d", LastSize);
+					FileNameToSend[strlen(FileNameToSend)-1] = '4';
+					send(dfs2, LastMsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 2 ://dfs2 (4,1)
+					send(dfs2, LastMsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '1';
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 3 ://dfs2 (1,2)
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '2';
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+			}
+		}
+	}*/
+/*----------------------Server 3--------------------------------*/
+/*	sentAuth = send(dfs3, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 3\n");
+	
+	sentAuth = read(dfs3, AuthBuf, BUFSIZE);
+	printf("%s\n", AuthBuf);
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs3, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 3\n");
+		
+		sentAuth = read(dfs3, AuthBuf, BUFSIZE);
+		printf("%s\n", AuthBuf);
+		
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs3, "PUT", 3, 0);
+			switch(dist)
+			{
+				case 0 ://dfs3 (3,4)
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					LastSize = st.st_size - (3*PieceSize);
+					sprintf(LastMsgSize, "%d", LastSize);
+					FileNameToSend[strlen(FileNameToSend)-1] = '4';
+					send(dfs3, LastMsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 1 ://dfs3 (4,1)
+					send(dfs3, LastMsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '1';
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 2 ://dfs3 (1,2)
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '2';
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 3 ://dfs3 (2,3)
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+			}
+		}
+	}*/
+/*----------------------Server 4--------------------------------*/
+/*	sentAuth = send(dfs4, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 4\n");
+	
+	sentAuth = read(dfs4, AuthBuf, BUFSIZE);
+	printf("%s\n", AuthBuf);
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs4, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 4\n");
+		
+		sentAuth = read(dfs4, AuthBuf, BUFSIZE);
+		printf("%s\n", AuthBuf);
+		
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs4, "PUT", 3, 0);
+			switch(dist)
+			{
+				case 0 ://dfs4(4,1)
+					send(dfs3, LastMsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '1';
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 1 ://dfs4(1,2)
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '2';
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 2 ://dfs4(2,3)
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';
+					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+
+				case 3 ://dfs4(3,4)
+					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+
+					FileNameToSend[strlen(FileNameToSend)-1] = '4';
+					send(dfs3, LastMsgSize, PieceSize, 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);		
+			}
+		}
+	}*/
+
+	free(part1);
+	free(part2);
+	free(part3);
+	free(part4);
+
 }
 
-void LIST(const char *auth, const int dfs1, const int dfs2, const int dfs3, const int dfs4)
+void LIST(struct conf dfcConfig, const int dfs1, const int dfs2, const int dfs3, const int dfs4)
 {
-	char *AuthBuf = calloc(BUFSIZE, 1);
+/*	char *AuthBuf = calloc(BUFSIZE, 1);
 	char *S1List = calloc(BUFSIZE, 1);
 	char *S2List = calloc(BUFSIZE, 1);
 	char *S3List = calloc(BUFSIZE, 1);
@@ -632,7 +925,7 @@ void LIST(const char *auth, const int dfs1, const int dfs2, const int dfs3, cons
 	int sentAuth, numFiles1, numFiles2, numFiles3, numFiles4;
 	int fail = 0;
 
-/*----------------------Server 1--------------------------------*/
+----------------------Server 1--------------------------------
 	sentAuth = send(dfs1, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -656,7 +949,7 @@ void LIST(const char *auth, const int dfs1, const int dfs2, const int dfs3, cons
 	}
 	else
 		fail++;
-/*----------------------Server 1--------------------------------*/
+/*----------------------Server 1--------------------------------
 	sentAuth = send(dfs2, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -680,7 +973,7 @@ void LIST(const char *auth, const int dfs1, const int dfs2, const int dfs3, cons
 	}
 	else
 		fail++;	
-/*----------------------Server 3--------------------------------*/
+/*----------------------Server 3--------------------------------
 	sentAuth = send(dfs3, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -704,7 +997,7 @@ void LIST(const char *auth, const int dfs1, const int dfs2, const int dfs3, cons
 	}
 	else
 		fail++;
-/*----------------------Server 4--------------------------------*/
+/*----------------------Server 4--------------------------------
 	sentAuth = send(dfs4, auth, strlen(auth), 0);
 	
 	if (sentAuth == 0)
@@ -728,17 +1021,15 @@ void LIST(const char *auth, const int dfs1, const int dfs2, const int dfs3, cons
 	}
 	else
 		fail++;
-/*------------Compare the number of files-----------------------*/
+/*------------Compare the number of files-----------------------
 	if (numFiles1 == numFiles2 && numFiles2 == numFiles3 && numFiles3 == numFiles4)
-		printf("%s\n", FileList);
+		printf("%s", FileList);
 	else if (fail > 1)
-	{
 		while((line = strsep(&FileList, "\n")) != NULL)
 			printf("%s [incomplete]\n", line);
-	}
 	//else
 		//figure out how to tell which specific file is incomplete
-
+*/
 }
 
 /*------------------------------------------------------------------------
