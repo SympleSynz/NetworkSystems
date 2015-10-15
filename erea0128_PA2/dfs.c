@@ -170,16 +170,10 @@ int main(int argc, char* argv[])
     			send(new_fd, "Authorized Password", 19, 0);
     			AuthBool = 1;
     		}
-    		else if(strcmp(PassBuf, authorized.Password2) == 0)
-	    	{
-	    		strcat(Root, authorized.Username);	
-	    		mkdir(Root, 0777);    		
-    			send(new_fd, "Authorized Password", 19, 0);
-    			AuthBool = 1;
-    		}
 	    	else
 	    	{
     			send(new_fd, "Invalid Password", 16, 0);
+    			printf("Connection %d closed\n", new_fd);
     			close(new_fd);
 	    	}
 	    }
@@ -191,29 +185,24 @@ int main(int argc, char* argv[])
 	    	if (bytes < 0)
 	    		fputs("Error reading file", stderr);
 	    	//printf("%s\n", PassBuf);
-	    	if(strcmp(PassBuf, authorized.Password) == 0)
+	    	if(strcmp(PassBuf, authorized.Password2) == 0)
 	    	{
 	    		strcat(Root, authorized.Username2);	
 	    		mkdir(Root, 0777);    		
     			send(new_fd, "Authorized Password", 19, 0);
     			AuthBool = 1;
     		}
-    		else if(strcmp(PassBuf, authorized.Password2) == 0)
-	    	{
-	    		strcat(Root, authorized.Username2);	 
-	    		mkdir(Root, 0777);   		
-    			send(new_fd, "Authorized Password", 19, 0);
-    			AuthBool = 1;
-    		}
 	    	else
 	    	{
     			send(new_fd, "Invalid Password", 16, 0);
+    			printf("Connection %d closed\n", new_fd);
     			close(new_fd);
 	    	}
 	    }
     	else
     	{
 			send(new_fd, "Invalid Password", 16, 0);
+			printf("Connection %d closed\n", new_fd);
 			close(new_fd);
     	}
 
@@ -252,6 +241,7 @@ int main(int argc, char* argv[])
                     }
                 }
             }
+            printf("Connection %d closed\n", new_fd);
             (void) close(new_fd); //Close the file descriptor for the child process
             exit(0);
        }

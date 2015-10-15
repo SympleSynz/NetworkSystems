@@ -106,6 +106,9 @@ int main(int argc, char* argv[])
 			if(strcmp(filename, "\0") != 0)
 			{
 				dfs1 = connectsock(host, dfcConfig.DFS1);
+				dfs2 = connectsock(host, dfcConfig.DFS2);
+				dfs3 = connectsock(host, dfcConfig.DFS3);
+				dfs4 = connectsock(host, dfcConfig.DFS4);
 				PUT(dfcConfig, filename, dfs1, dfs2, dfs3, dfs4);
 			}
 			else
@@ -652,11 +655,11 @@ void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int 
     fclose(fp);
     int PartSize = strlen(part1);
    	sprintf(MsgSize, "%d", PartSize);
-   	printf("MsgSize %s\n", MsgSize);
    	int Msg = strlen(MsgSize);
 
    	int LastPartSize = strlen(part4);
     sprintf(LastMsgSize, "%d", LastPartSize);
+    int LastMsg = strlen(LastMsgSize);
 
     strcpy(FileNameToSend, "/.");
 	strcat(FileNameToSend, filename);
@@ -701,36 +704,48 @@ void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int 
 					send(dfs1, part2, strlen(part2), 0);
 
 				case 1 ://dfs1 (2,3)
-					FileNameToSend[strlen(FileNameToSend)-1] = '2';					
+					FileNameToSend[strlen(FileNameToSend)-1] = '2';
+					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part2, strlen(part2), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '3';
+					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part3, strlen(part3), 0);
 
 				case 2 ://dfs1 (3,4)
-					FileNameToSend[strlen(FileNameToSend)-1] = '3';					
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';
+					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs1, MsgSize, strlen(MsgSize), 0);
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part3, strlen(part3), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
+					send(dfs1, (char*)&LastMsg, sizeof(LastMsg), 0);
 					send(dfs1, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part4, strlen(part4), 0);
 
 				case 3 ://dfs1 (4,1)
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
+					send(dfs1, (char*)&LastMsg, sizeof(LastMsg), 0);
 					send(dfs1, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part4, strlen(part4), 0);
 
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
+					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs1, MsgSize, strlen(MsgSize), 0);
-					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);	
+					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part1, strlen(part1), 0);
 			}
 		}
@@ -757,39 +772,61 @@ void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int 
 			send(dfs2, "PUT", 3, 0);
 			switch(dist)
 			{
-				case 0 ://dfs2 (2,3)
-					send(dfs2, MsgSize, PieceSize, 0);
+				case 0 ://dfs2 (2,3)				
+					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs2, MsgSize, strlen(MsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs2, part2, strlen(part2), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '3';
-					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs2, MsgSize, strlen(MsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs2, part3, strlen(part3), 0);
 
-				case 1 ://dfs2 (3,4)
-					send(dfs2, MsgSize, PieceSize, 0);
+				case 1 ://dfs2 (3,4)				
+					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs2, MsgSize, strlen(MsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs2, part3, strlen(part3), 0);
 					
-					LastSize = st.st_size - (3*PieceSize);
-					sprintf(LastMsgSize, "%d", LastSize);
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
-					send(dfs2, LastMsgSize, PieceSize, 0);
+					send(dfs2, (char*)&LastMsg, sizeof(LastMsg), 0);
+					send(dfs2, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs2, part4, strlen(part4), 0);
 
 				case 2 ://dfs2 (4,1)
-					send(dfs2, LastMsgSize, PieceSize, 0);
+					send(dfs2, (char*)&LastMsg, sizeof(LastMsg), 0);
+					send(dfs2, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
-					
+					send(dfs2, part4, strlen(part4), 0);
+
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
-					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs2, MsgSize, strlen(MsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs2, part1, strlen(part1), 0);
 
 				case 3 ://dfs2 (1,2)
-					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs2, MsgSize, strlen(MsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs2, part1, strlen(part1), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '2';
-					send(dfs2, MsgSize, PieceSize, 0);
+					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs2, MsgSize, strlen(MsgSize), 0);
+					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs2, part2, strlen(part2), 0);
 			}
 		}
 	}*/
@@ -815,38 +852,60 @@ void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int 
 			switch(dist)
 			{
 				case 0 ://dfs3 (3,4)
-					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs3, MsgSize, strlen(MsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, part3, strlen(part3), 0);
 					
-					LastSize = st.st_size - (3*PieceSize);
-					sprintf(LastMsgSize, "%d", LastSize);
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
-					send(dfs3, LastMsgSize, PieceSize, 0);
+					send(dfs3, (char*)&LastMsg, sizeof(LastMsg), 0);
+					send(dfs3, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, part4, strlen(part4), 0);
 
 				case 1 ://dfs3 (4,1)
-					send(dfs3, LastMsgSize, PieceSize, 0);
+					send(dfs3, (char*)&LastMsg, sizeof(LastMsg), 0);
+					send(dfs3, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
-					
+					send(dfs3, part4, strlen(part4), 0);
+
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
-					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs3, MsgSize, strlen(MsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, part1, strlen(part1), 0);
 
 				case 2 ://dfs3 (1,2)
-					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs3, MsgSize, strlen(MsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, part1, strlen(part1), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '2';
-					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs3, MsgSize, strlen(MsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, part2, strlen(part2), 0);
 
 				case 3 ://dfs3 (2,3)
-					send(dfs3, MsgSize, PieceSize, 0);
+					send(dfs3, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs3, MsgSize, strlen(MsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, part2, strlen(part2), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '3';
-					send(dfs2, MsgSize, PieceSize, 0);
-					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs3, MsgSize, strlen(MsgSize), 0);
+					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs3, part3, strlen(part3), 0);
 			}
 		}
 	}*/
@@ -872,36 +931,60 @@ void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int 
 			switch(dist)
 			{
 				case 0 ://dfs4(4,1)
-					send(dfs3, LastMsgSize, PieceSize, 0);
-					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
-					
+					send(dfs4, (char*)&LastMsg, sizeof(LastMsg), 0);
+					send(dfs4, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part4, strlen(part4), 0);
+
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
-					send(dfs3, MsgSize, PieceSize, 0);
-					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs4, MsgSize, strlen(MsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part1, strlen(part1), 0);
 
 				case 1 ://dfs4(1,2)
-					send(dfs3, MsgSize, PieceSize, 0);
-					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs4, MsgSize, strlen(MsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part1, strlen(part1), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '2';
-					send(dfs3, MsgSize, PieceSize, 0);
-					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs4, MsgSize, strlen(MsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part2, strlen(part2), 0);
 
 				case 2 ://dfs4(2,3)
-					send(dfs3, MsgSize, PieceSize, 0);
-					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs4, MsgSize, strlen(MsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part2, strlen(part2), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '3';
-					send(dfs2, MsgSize, PieceSize, 0);
-					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs4, MsgSize, strlen(MsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part3, strlen(part3), 0);
 
 				case 3 ://dfs4(3,4)
-					send(dfs3, MsgSize, PieceSize, 0);
-					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
-
+					send(dfs4, (char*)&Msg, sizeof(Msg), 0);
+					send(dfs4, MsgSize, strlen(MsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part3, strlen(part3), 0);
+					
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
-					send(dfs3, LastMsgSize, PieceSize, 0);
-					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);		
+					send(dfs4, (char*)&LastMsg, sizeof(LastMsg), 0);
+					send(dfs4, LastMsgSize, strlen(LastMsgSize), 0);
+					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
+					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
+					send(dfs4, part4, strlen(part4), 0);		
 			}
 		}
 	}*/
