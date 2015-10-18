@@ -40,6 +40,7 @@ struct conf parseConfig(char *filename);
 int hashDist(const char *filename);
 int	errexit(const char *format, ...);
 int	connectsock(const char *host, const char *portnum);
+char* XOR(char *string, char *key);
 void GET(struct conf dfcConfig, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
 void PUT(struct conf dfcConfig, const char *filename, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
 void LIST(struct conf dfcConfig, const int dfs1, const int dfs2, const int dfs3, const int dfs4);
@@ -1113,6 +1114,15 @@ void LIST(struct conf dfcConfig, const int dfs1, const int dfs2, const int dfs3,
 	//else
 		//figure out how to tell which specific file is incomplete
 */
+}
+
+char* XOR(char *string, char *key)
+{
+	char *s = string;
+	size_t length = strlen(key), i = 0;
+	while(*s)
+		*s ^= key[i++ % length];
+	return string;
 }
 
 /*------------------------------------------------------------------------
