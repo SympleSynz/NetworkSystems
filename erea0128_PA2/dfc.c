@@ -177,13 +177,19 @@ void GET(struct conf dfcConfig, const char *filename)
 	char *AuthBuf = calloc(BUFSIZE, 1);
 	char *S1Content1, *S1Content2, *S2Content1, *S2Content2, *S3Content1, *S3Content2, *S4Content1, *S4Content2, *MsgSize;
 	char ServerPieces[1];
-	char *Hashing = calloc(2, 1);
+	int *Hashing = calloc(5, sizeof(int));
+	char *Hash = calloc(8, 1);
 	char Root[50];
 	char *host = "localhost";
 	FILE *fp;
 	int sentAuth, filenameSize, hashType, PieceSize, bytes, ContentSize, dfs1, dfs2, dfs3, dfs4;
 
-	filenameSize = strlen(filename);			
+	filenameSize = strlen(filename);
+	Hashing[0] = 0;
+	Hashing[1] = 0;
+	Hashing[2] = 0;
+	Hashing[3] = 0;
+	Hashing[4] = 0;			
 /*----------------------Server 1--------------------------------*/
 	dfs1 = connectsock(host, dfcConfig.DFS1);
 	sentAuth = send(dfs1, dfcConfig.Username, strlen(dfcConfig.Username), 0);
@@ -199,6 +205,7 @@ void GET(struct conf dfcConfig, const char *filename)
 		if (sentAuth == 0)
 			printf("Failure to send Password authorization to Server 1\n");
 		
+		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs1, AuthBuf, BUFSIZE);
 		printf("%s\n", AuthBuf);
 		
@@ -211,53 +218,50 @@ void GET(struct conf dfcConfig, const char *filename)
 			bytes = read(dfs1, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in first Piece number\n");
+			Hash[0] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs1, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			Hashing[0] = ServerPieces[0];
-			bytes = read(dfs1, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs1, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs1, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S1Content1 = calloc(ContentSize, 1);
-			bytes = read(dfs1, S1Content1, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");
-			free(MsgSize);
+				ContentSize = atoi(MsgSize);
+				S1Content1 = calloc(ContentSize, 1);
+				bytes = read(dfs1, S1Content1, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");
+				free(MsgSize);
+			}
 
 			bytes = read(dfs1, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in second Piece number\n");
+			Hash[1] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs1, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			Hashing[1] = ServerPieces[0];
-			bytes = read(dfs1, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs1, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs1, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S1Content2 = calloc(ContentSize, 1);
-			bytes = read(dfs1, S1Content2, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");
-			free(MsgSize);
-
-			if ((Hashing[0] == '1' && Hashing[1] == '2') || (Hashing[1] == '1' && Hashing[0] == '2'))
-				hashType = 0;
-			else if ((Hashing[0] == '2' && Hashing[1] == '3') || (Hashing[1] == '2' && Hashing[0] == '3'))
-				hashType = 1;
-			else if ((Hashing[0] == '3' && Hashing[1] == '4') || (Hashing[1] == '3' && Hashing[0] == '4'))
-				hashType = 2;
-			else
-				hashType = 3;	
+				ContentSize = atoi(MsgSize);
+				S1Content2 = calloc(ContentSize, 1);
+				bytes = read(dfs1, S1Content2, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");
+				free(MsgSize);
+			}	
 		}
 	}
 /*----------------------Server 2--------------------------------*/
@@ -266,6 +270,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	if (sentAuth == 0)
 		printf("Failure to send Username authorization to Server 1\n");
 	
+	memset(AuthBuf, 0, BUFSIZE);
 	sentAuth = read(dfs2, AuthBuf, BUFSIZE);
 	printf("%s\n", AuthBuf);
 
@@ -275,6 +280,7 @@ void GET(struct conf dfcConfig, const char *filename)
 		if (sentAuth == 0)
 			printf("Failure to send Password authorization to Server 1\n");
 		
+		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs2, AuthBuf, BUFSIZE);
 		printf("%s\n", AuthBuf);
 		
@@ -287,41 +293,49 @@ void GET(struct conf dfcConfig, const char *filename)
 			bytes = read(dfs2, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in first Piece number\n");
+			Hash[2] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs2, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			bytes = read(dfs2, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs2, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs2, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S2Content1 = calloc(ContentSize, 1);
-			bytes = read(dfs2, S2Content1, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");
-			free(MsgSize);
+				ContentSize = atoi(MsgSize);
+				S2Content1 = calloc(ContentSize, 1);
+				bytes = read(dfs2, S2Content1, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");
+				free(MsgSize);
+			}
 
 			bytes = read(dfs2, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in first Piece number\n");
+			Hash[3] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs2, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			bytes = read(dfs2, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs2, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs2, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S2Content2 = calloc(ContentSize, 1);
-			bytes = read(dfs2, S2Content2, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");	
+				ContentSize = atoi(MsgSize);
+				S2Content2 = calloc(ContentSize, 1);
+				bytes = read(dfs2, S2Content2, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");	
+			}
 		}
 	}			
 /*----------------------Server 3--------------------------------*/
@@ -330,6 +344,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	if (sentAuth == 0)
 		printf("Failure to send Username authorization to Server 1\n");
 	
+	memset(AuthBuf, 0, BUFSIZE);
 	sentAuth = read(dfs3, AuthBuf, BUFSIZE);
 	printf("%s\n", AuthBuf);
 
@@ -339,6 +354,7 @@ void GET(struct conf dfcConfig, const char *filename)
 		if (sentAuth == 0)
 			printf("Failure to send Password authorization to Server 1\n");
 		
+		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs3, AuthBuf, BUFSIZE);
 		printf("%s\n", AuthBuf);
 		
@@ -351,41 +367,49 @@ void GET(struct conf dfcConfig, const char *filename)
 			bytes = read(dfs3, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in first Piece number\n");
+			Hash[4] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs3, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			bytes = read(dfs3, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs3, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs3, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S3Content1 = calloc(ContentSize, 1);
-			bytes = read(dfs3, S3Content1, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");
-			free(MsgSize);
+				ContentSize = atoi(MsgSize);
+				S3Content1 = calloc(ContentSize, 1);
+				bytes = read(dfs3, S3Content1, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");
+				free(MsgSize);
+			}
 
 			bytes = read(dfs3, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in first Piece number\n");
+			Hash[5] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs3, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			bytes = read(dfs3, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs3, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs3, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S3Content2 = calloc(ContentSize, 1);
-			bytes = read(dfs3, S3Content2, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");
+				ContentSize = atoi(MsgSize);
+				S3Content2 = calloc(ContentSize, 1);
+				bytes = read(dfs3, S3Content2, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");
+			}
 		}
 	}			
 /*----------------------Server 4--------------------------------*/
@@ -394,6 +418,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	if (sentAuth == 0)
 		printf("Failure to send Username authorization to Server 1\n");
 	
+	memset(AuthBuf, 0, BUFSIZE);	
 	sentAuth = read(dfs4, AuthBuf, BUFSIZE);
 	printf("%s\n", AuthBuf);
 
@@ -403,6 +428,7 @@ void GET(struct conf dfcConfig, const char *filename)
 		if (sentAuth == 0)
 			printf("Failure to send Password authorization to Server 1\n");
 		
+		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs4, AuthBuf, BUFSIZE);
 		printf("%s\n", AuthBuf);
 		
@@ -415,127 +441,161 @@ void GET(struct conf dfcConfig, const char *filename)
 			bytes = read(dfs4, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in first Piece number\n");
+			Hash[6] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs4, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			bytes = read(dfs4, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs4, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs4, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S4Content1 = calloc(ContentSize, 1);
-			bytes = read(dfs4, S4Content1, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");
-			free(MsgSize);
+				ContentSize = atoi(MsgSize);
+				S4Content1 = calloc(ContentSize, 1);
+				bytes = read(dfs4, S4Content1, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");
+				free(MsgSize);
+			}
 
 			bytes = read(dfs4, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in first Piece number\n");
+			Hash[7] = ServerPieces[0];
+			if (strcmp(ServerPieces, "0") != 0)
+			{
+				Hashing[atoi(ServerPieces)] = 1;
+				bytes = read(dfs4, (char*) &PieceSize, sizeof(PieceSize));
+				if (bytes < 0)
+					printf("Error reading in Piece Size\n");
 
-			bytes = read(dfs4, (char*) &PieceSize, sizeof(PieceSize));
-			if (bytes < 0)
-				printf("Error reading in Piece Size\n");
+				MsgSize = calloc(PieceSize, 1);
+				bytes = read(dfs4, MsgSize, PieceSize);
+				if (bytes < 0)
+					printf("Error reading in Msg Size\n");
 
-			MsgSize = calloc(PieceSize, 1);
-			bytes = read(dfs4, MsgSize, PieceSize);
-			if (bytes < 0)
-				printf("Error reading in Msg Size\n");
-
-			ContentSize = atoi(MsgSize);
-			S4Content2 = calloc(ContentSize, 1);
-			bytes = read(dfs4, S4Content2, ContentSize);
-			if (bytes < 0)
-				printf("Error reading in file\n");
+				ContentSize = atoi(MsgSize);
+				S4Content2 = calloc(ContentSize, 1);
+				bytes = read(dfs4, S4Content2, ContentSize);
+				if (bytes < 0)
+					printf("Error reading in file\n");
+			}
 		}
 	}
-/*-------------------Decrypt FileContent------------------------*/
-	S1Content1 = XOR(S1Content1, dfcConfig.Password);
-	S1Content2 = XOR(S1Content2, dfcConfig.Password);
-	S2Content1 = XOR(S2Content1, dfcConfig.Password);
-	S2Content2 = XOR(S2Content2, dfcConfig.Password);
-	S3Content1 = XOR(S3Content1, dfcConfig.Password);
-	S3Content2 = XOR(S3Content2, dfcConfig.Password);
-	S4Content1 = XOR(S4Content1, dfcConfig.Password);
-	S4Content2 = XOR(S4Content2, dfcConfig.Password);
-/*------------Put files back together and write to file---------*/
+
+	if(Hashing[1] == 0 || Hashing[2] == 0 || Hashing[3] == 0 || Hashing[4] == 0)
+	{
+		printf("%s File is incomplete\n", filename);
+		free(S1Content1);
+		free(S1Content2);
+		free(S2Content1);
+		free(S2Content2);
+		free(S3Content1);
+		free(S3Content2);
+		free(S4Content1);
+		free(S4Content2);
+		free(AuthBuf);
+		free(MsgSize);
+		free(Hashing);
+		free(Hash);
+	}
+/*------------Put files back together and write to file---------*/	
 	strcpy(Root, "./Client/");
 	strcat(Root, filename);
 	fp = fopen(Root, "w");
+	
+	if ((Hash[0] == '1' && Hash[1] == '2') || (Hash[2] == '2' && Hash[3] == '3') || (Hash[4] == '3' && Hash[5] == '4') || (Hash[6] == '1' && Hash[7] == '4'))
+		hashType = 0;
+	else if ((Hash[0] == '2' && Hash[1] == '3') || (Hash[2] == '3' && Hash[3] == '4') || (Hash[4] == '1' && Hash[5] == '4') || (Hash[6] == '1' && Hash[7] == '2'))
+		hashType = 1;
+	else if ((Hash[0] == '3' && Hash[1] == '4') || (Hash[2] == '1' && Hash[3] == '4') || (Hash[4] == '1' && Hash[5] == '2') || (Hash[6] == '2' && Hash[7] == '3'))
+		hashType = 2;
+	else
+		hashType = 3;
+
+	char *TotalContent = calloc(strlen(S1Content1)+strlen(S1Content2)+strlen(S2Content1)+strlen(S2Content2)+strlen(S3Content1)+strlen(S3Content2)+strlen(S4Content1)+strlen(S4Content2), 1);
 	switch(hashType)
 	{
 		case 0 : //(1,2)(2,3)(3,4)(1,4)
 			if (strlen(S1Content1) <= strlen(S4Content1))
-				fprintf(fp, "%s", S4Content1);
+				strcpy(TotalContent, S4Content1);
 			else
-				fprintf(fp, "%s", S1Content1);
+				strcpy(TotalContent, S1Content1);
 			if (strlen(S1Content2) <= strlen(S2Content1))
-				fprintf(fp, "%s", S2Content1);
+				strcpy(TotalContent+strlen(TotalContent), S2Content1);
 			else
-				fprintf(fp, "%s", S1Content2);
+				strcpy(TotalContent+strlen(TotalContent), S1Content2);
 			if (strlen(S2Content2) <= strlen(S3Content1))
-				fprintf(fp, "%s", S3Content1);
+				strcpy(TotalContent+strlen(TotalContent), S3Content1);
 			else
-				fprintf(fp, "%s", S2Content2);
+				strcpy(TotalContent+strlen(TotalContent), S2Content2);
 			if (strlen(S3Content2) <= strlen(S4Content2))
-				fprintf(fp, "%s", S4Content2);
+				strcpy(TotalContent+strlen(TotalContent), S4Content2);
 			else
-				fprintf(fp, "%s", S3Content2);
+				strcpy(TotalContent+strlen(TotalContent), S3Content2);
+			break;
 		case 1 : //(2,3)(3,4)(1,4)(1,2)
 			if (strlen(S3Content1) <= strlen(S4Content1))
-				fprintf(fp, "%s", S4Content1);
+				strcpy(TotalContent, S4Content1);
 			else
-				fprintf(fp, "%s", S3Content1);
+				strcpy(TotalContent, S3Content1);
 			if (strlen(S4Content2) <= strlen(S1Content1))
-				fprintf(fp, "%s", S1Content1);
+				strcpy(TotalContent+strlen(TotalContent), S1Content1);
 			else
-				fprintf(fp, "%s", S4Content2);
+				strcpy(TotalContent+strlen(TotalContent), S4Content2);
 			if (strlen(S1Content2) <= strlen(S2Content1))
-				fprintf(fp, "%s", S2Content1);
+				strcpy(TotalContent+strlen(TotalContent), S2Content1);
 			else
-				fprintf(fp, "%s", S1Content2);
+				strcpy(TotalContent+strlen(TotalContent), S3Content2);
 			if (strlen(S2Content2) <= strlen(S3Content2))
-				fprintf(fp, "%s", S3Content2);
+				strcpy(TotalContent+strlen(TotalContent), S3Content2);
 			else
-				fprintf(fp, "%s", S2Content2);
+				strcpy(TotalContent+strlen(TotalContent), S2Content2);
+			break;
 		case 2 : //(3,4)(1,4)(1,2)(2,3)
 			if (strlen(S2Content1) <= strlen(S3Content1))
-				fprintf(fp, "%s", S3Content1);
+				strcpy(TotalContent, S3Content1);
 			else
-				fprintf(fp, "%s", S2Content1);
+				strcpy(TotalContent, S2Content1);
 			if (strlen(S3Content2) <= strlen(S4Content1))
-				fprintf(fp, "%s", S4Content1);
+				strcpy(TotalContent+strlen(TotalContent), S4Content1);
 			else
-				fprintf(fp, "%s", S3Content2);
+				strcpy(TotalContent+strlen(TotalContent), S3Content2);
 			if (strlen(S4Content2) <= strlen(S1Content1))
-				fprintf(fp, "%s", S1Content1);
+				strcpy(TotalContent+strlen(TotalContent), S1Content1);
 			else
-				fprintf(fp, "%s", S4Content2);
+				strcpy(TotalContent+strlen(TotalContent), S4Content2);
 			if (strlen(S1Content2) <= strlen(S2Content2))
-				fprintf(fp, "%s", S2Content2);
+				strcpy(TotalContent+strlen(TotalContent), S2Content2);
 			else
-				fprintf(fp, "%s", S1Content2);
+				strcpy(TotalContent+strlen(TotalContent), S1Content2);
+			break;
 		case 3 : //(1,4)(1,2)(2,3)(3,4)
 			if (strlen(S1Content1) <= strlen(S2Content1))
-				fprintf(fp, "%s", S2Content1);
+				strcpy(TotalContent, S2Content1);
 			else
-				fprintf(fp, "%s", S1Content1);
+				strcpy(TotalContent, S1Content1);
 			if (strlen(S2Content2) <= strlen(S3Content1))
-				fprintf(fp, "%s", S3Content1);
+				strcpy(TotalContent+strlen(TotalContent), S3Content1);
 			else
-				fprintf(fp, "%s", S2Content2);
+				strcpy(TotalContent+strlen(TotalContent), S2Content2);
 			if (strlen(S3Content2) <= strlen(S4Content1))
-				fprintf(fp, "%s", S4Content1);
+				strcpy(TotalContent+strlen(TotalContent), S4Content1);
 			else
-				fprintf(fp, "%s", S3Content2);
+				strcpy(TotalContent+strlen(TotalContent), S3Content2);
 			if (strlen(S1Content2) <= strlen(S4Content2))
-				fprintf(fp, "%s", S4Content2);
+				strcpy(TotalContent+strlen(TotalContent), S4Content2);
 			else
-				fprintf(fp, "%s", S1Content2);
+				strcpy(TotalContent+strlen(TotalContent), S1Content2);
+			break;
 	}
+	TotalContent = XOR(TotalContent, dfcConfig.Password);
+	fprintf(fp, "%s", TotalContent);
+	fclose(fp);
 	free(S1Content1);
 	free(S1Content2);
 	free(S2Content1);
@@ -547,6 +607,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	free(AuthBuf);
 	free(MsgSize);
 	free(Hashing);
+	free(Hash);
 }
 
 void PUT(struct conf dfcConfig, const char *filename)
@@ -574,7 +635,12 @@ void PUT(struct conf dfcConfig, const char *filename)
 	}
 
 	stat(root, &st);
-	PieceSize = st.st_size/4 + 1;
+	int BigSize = st.st_size*2;
+	char *OrigFile = calloc(BigSize, 1);
+	fread(OrigFile, 1, st.st_size, fp);
+	OrigFile = XOR(OrigFile, dfcConfig.Password);
+
+	PieceSize = strlen(OrigFile)/4 + 1;
 	LastSize = PieceSize + 4;
     
     char *part1 = calloc(PieceSize, 1);
@@ -582,16 +648,12 @@ void PUT(struct conf dfcConfig, const char *filename)
     char *part3 = calloc(PieceSize, 1);
     char *part4 = calloc(LastSize, 1);
     
-    fgets(part1, PieceSize, fp);
-    fgets(part2, PieceSize, fp);
-    fgets(part3, PieceSize, fp);
-    fgets(part4, LastSize, fp);
-    fclose(fp);
+    strncpy(part1, OrigFile, PieceSize);
+    strncpy(part2, OrigFile+PieceSize, PieceSize);
+    strncpy(part3, OrigFile+(PieceSize*2), PieceSize);
+    strncpy(part4, OrigFile+(PieceSize*3), PieceSize);
 
-    part1 = XOR(part1, dfcConfig.Password);
-    part2 = XOR(part2, dfcConfig.Password);
-    part3 = XOR(part3, dfcConfig.Password);
-    part4 = XOR(part4, dfcConfig.Password);
+    fclose(fp);
 
     int PartSize = strlen(part1);
    	sprintf(MsgSize, "%d", PartSize);
@@ -630,7 +692,6 @@ void PUT(struct conf dfcConfig, const char *filename)
 			switch(dist)
 			{
 				case 0 ://dfs1 (1,2)
-					printf("%s\n", FileNameToSend);	
 					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs1, MsgSize, strlen(MsgSize), 0);
 					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
@@ -638,12 +699,12 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs1, part1, strlen(part1), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '2';
-					printf("%s\n", FileNameToSend);	
 					send(dfs1, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs1, MsgSize, strlen(MsgSize), 0);
 					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part2, strlen(part2), 0);
+					break;
 
 				case 1 ://dfs1 (2,3)
 					FileNameToSend[strlen(FileNameToSend)-1] = '2';
@@ -659,6 +720,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part3, strlen(part3), 0);
+					break;
 
 				case 2 ://dfs1 (3,4)
 					FileNameToSend[strlen(FileNameToSend)-1] = '3';
@@ -674,6 +736,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part4, strlen(part4), 0);
+					break;
 
 				case 3 ://dfs1 (4,1)
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
@@ -689,6 +752,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs1, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs1, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs1, part1, strlen(part1), 0);
+					break;
 			}
 		}
 		close(dfs1);
@@ -716,26 +780,23 @@ void PUT(struct conf dfcConfig, const char *filename)
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs2, "PUT ", 4, 0);
-			printf("%d\n", dist);
 			switch(dist)
 			{
 				case 0 ://dfs2 (2,3)
-					printf("Server 2\n");
-					FileNameToSend[strlen(FileNameToSend)-1] = '2';
-					printf("%s\n", FileNameToSend);				
+					FileNameToSend[strlen(FileNameToSend)-1] = '2';		
 					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs2, MsgSize, strlen(MsgSize), 0);
 					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs2, part2, strlen(part2), 0);
 					
-					FileNameToSend[strlen(FileNameToSend)-1] = '3';
-					printf("%s\n", FileNameToSend);	
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';	
 					send(dfs2, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs2, MsgSize, strlen(MsgSize), 0);
 					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs2, part3, strlen(part3), 0);
+					break;
 
 				case 1 ://dfs2 (3,4)
 					FileNameToSend[strlen(FileNameToSend)-1] = '3';				
@@ -751,6 +812,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs2, part4, strlen(part4), 0);
+					break;
 
 				case 2 ://dfs2 (4,1)
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
@@ -766,6 +828,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs2, part1, strlen(part1), 0);
+					break;
 
 				case 3 ://dfs2 (1,2)
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
@@ -781,6 +844,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs2, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs2, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs2, part2, strlen(part2), 0);
+					break;
 			}
 		}
 		close(dfs2);
@@ -810,9 +874,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 			switch(dist)
 			{
 				case 0 ://dfs3 (3,4)
-					printf("Server 3\n");
-					FileNameToSend[strlen(FileNameToSend)-1] = '3';
-					printf("%s\n", FileNameToSend);	
+					FileNameToSend[strlen(FileNameToSend)-1] = '3';	
 					send(dfs3, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs3, MsgSize, strlen(MsgSize), 0);
 					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
@@ -820,12 +882,12 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs3, part3, strlen(part3), 0);
 					
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
-					printf("%s\n", FileNameToSend);	
 					send(dfs3, (char*)&LastMsg, sizeof(LastMsg), 0);
 					send(dfs3, LastMsgSize, strlen(LastMsgSize), 0);
 					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs3, part4, strlen(part4), 0);
+					break;
 
 				case 1 ://dfs3 (4,1)
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
@@ -841,6 +903,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs3, part1, strlen(part1), 0);
+					break;
 
 				case 2 ://dfs3 (1,2)
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
@@ -856,6 +919,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs3, part2, strlen(part2), 0);
+					break;
 
 				case 3 ://dfs3 (2,3)
 					FileNameToSend[strlen(FileNameToSend)-1] = '2';
@@ -871,6 +935,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs3, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs3, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs3, part3, strlen(part3), 0);
+					break;
 			}
 		}
 		close(dfs3);
@@ -900,9 +965,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 			switch(dist)
 			{
 				case 0 ://dfs4(4,1)
-					printf("Server 4\n");
 					FileNameToSend[strlen(FileNameToSend)-1] = '4';
-					printf("%s\n", FileNameToSend);	
 					send(dfs4, (char*)&LastMsg, sizeof(LastMsg), 0);
 					send(dfs4, LastMsgSize, strlen(LastMsgSize), 0);
 					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
@@ -910,12 +973,12 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs4, part4, strlen(part4), 0);
 
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
-					printf("%s\n", FileNameToSend);	
 					send(dfs4, (char*)&Msg, sizeof(Msg), 0);
 					send(dfs4, MsgSize, strlen(MsgSize), 0);
 					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs4, part1, strlen(part1), 0);
+					break;
 
 				case 1 ://dfs4(1,2)
 					FileNameToSend[strlen(FileNameToSend)-1] = '1';
@@ -931,6 +994,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs4, part2, strlen(part2), 0);
+					break;
 
 				case 2 ://dfs4(2,3)
 					FileNameToSend[strlen(FileNameToSend)-1] = '2';
@@ -946,6 +1010,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
 					send(dfs4, part3, strlen(part3), 0);
+					break;
 
 				case 3 ://dfs4(3,4)
 					FileNameToSend[strlen(FileNameToSend)-1] = '3';
@@ -960,15 +1025,12 @@ void PUT(struct conf dfcConfig, const char *filename)
 					send(dfs4, LastMsgSize, strlen(LastMsgSize), 0);
 					send(dfs4, (char*)&FileNameLength, sizeof(FileNameLength), 0);
 					send(dfs4, FileNameToSend, strlen(FileNameToSend), 0);
-					send(dfs4, part4, strlen(part4), 0);		
+					send(dfs4, part4, strlen(part4), 0);
+					break;		
 			}
 		}
 		close(dfs4);
 	}
-	printf("DFS1 %d\n", dfs1);
-	printf("DFS2 %d\n", dfs2);
-	printf("DFS3 %d\n", dfs3);
-	printf("DFS4 %d\n", dfs4);
 
 	free(part1);
 	free(part2);

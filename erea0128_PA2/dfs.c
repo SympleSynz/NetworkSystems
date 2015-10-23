@@ -38,7 +38,7 @@ struct conf parseConfig();
 
 void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
-//void GET();
+void GET(char Root[50], int fd);
 void PUT(char Root[50], int fd);
 //void LIST();
 
@@ -55,7 +55,6 @@ int main(int argc, char* argv[])
     //struct stat sb;
     int yes = 1;
     char s[INET6_ADDRSTRLEN];
-    //char buffer[BUFSIZE];
     char Root[50];
     char UserBuf[BUFSIZE];
     char PassBuf[BUFSIZE];
@@ -216,7 +215,6 @@ int main(int argc, char* argv[])
                 ufds[0].fd = new_fd;
                 ufds[0].events = POLLIN;
                 pollRtn = poll(ufds, 1, 1000);
-                printf("%d\n", pollRtn);
                 if (pollRtn == -1) //Error when getting a poll
                     printf("Error when creating poll for child fork\n");   
                 else if (pollRtn == 0) //timed out
@@ -250,11 +248,6 @@ int main(int argc, char* argv[])
        }
        (void) close(new_fd);  // parent doesn't need this
     }
-}
-
-void Request(char Root[50], int fd)
-{
-
 }
 
 void sigchld_handler(int s)
@@ -321,7 +314,7 @@ void GET(char Root[50], int fd)
 	char *FileRoot = calloc(50, 1);
 	char MsgSize[15];
 	char *filename, *Content;
-	int bytes, Msg, sentPieces = 0;
+	int bytes, Msg;
 	FILE *fp;
 	
 	//Receiving the first piece
@@ -343,7 +336,7 @@ void GET(char Root[50], int fd)
 	{
 		stat(FileRoot, &st);
 		PieceSize = st.st_size;
-		sprintf(MsgSize, "%d", PartSize);
+		sprintf(MsgSize, "%d", PieceSize);
 		Msg = strlen(MsgSize);
 
 		send(fd, "1", 1, 0);
@@ -352,8 +345,7 @@ void GET(char Root[50], int fd)
 		Content = calloc(PieceSize, 1);
 		fread(Content, 1, PieceSize, fp);
 		send(fd, Content, strlen(Content), 0);
-		sentPieces++;
-		close(fp);
+		fclose(fp);
 		free(Content);
 
 		FileRoot[strlen(FileRoot)-1] = '2';
@@ -362,7 +354,7 @@ void GET(char Root[50], int fd)
 		{
 			stat(FileRoot, &st);
 			PieceSize = st.st_size;
-			sprintf(MsgSize, "%d", PartSize);
+			sprintf(MsgSize, "%d", PieceSize);
 			Msg = strlen(MsgSize);
 
 			send(fd, "2", 1, 0);
@@ -371,17 +363,42 @@ void GET(char Root[50], int fd)
 			Content = calloc(PieceSize, 1);
 			fread(Content, 1, PieceSize, fp);
 			send(fd, Content, strlen(Content), 0);
-			sentPieces++;
-			close(fp);
+			fclose(fp);
 			free(Content);
 		}
 		else
 		{
 			FileRoot[strlen(FileRoot)-1] = '4';
 			fp = fopen(FileRoot, "rb");
+			if (fp != NULL)
+			{
+				stat(FileRoot, &st);
+				PieceSize = st.st_size;
+				sprintf(MsgSize, "%d", PieceSize);
+				Msg = strlen(MsgSize);
+
+				send(fd, "4", 1, 0);
+				send(fd, (char*)&Msg, sizeof(Msg), 0);
+				send(fd, MsgSize, strlen(MsgSize), 0);
+				Content = calloc(PieceSize, 1);
+				fread(Content, 1, PieceSize, fp);
+				send(fd, Content, strlen(Content), 0);
+				fclose(fp);
+				free(Content);
+			}
+			else
+				send(fd, "0", 1, 0);
+		}
+	}
+	else
+	{
+		FileRoot[strlen(FileRoot)-1] = '2';
+		fp = fopen(FileRoot, "rb");
+		if (fp != NULL)
+		{
 			stat(FileRoot, &st);
 			PieceSize = st.st_size;
-			sprintf(MsgSize, "%d", PartSize);
+			sprintf(MsgSize, "%d", PieceSize);
 			Msg = strlen(MsgSize);
 
 			send(fd, "2", 1, 0);
@@ -390,13 +407,77 @@ void GET(char Root[50], int fd)
 			Content = calloc(PieceSize, 1);
 			fread(Content, 1, PieceSize, fp);
 			send(fd, Content, strlen(Content), 0);
-			sentPieces++;
-			close(fp);
+			fclose(fp);
 			free(Content);
+
+			FileRoot[strlen(FileRoot)-1] = '3';
+			fp = fopen(FileRoot, "rb");
+			if (fp != NULL)
+			{
+				stat(FileRoot, &st);
+				PieceSize = st.st_size;
+				sprintf(MsgSize, "%d", PieceSize);
+				Msg = strlen(MsgSize);
+
+				send(fd, "3", 1, 0);
+				send(fd, (char*)&Msg, sizeof(Msg), 0);
+				send(fd, MsgSize, strlen(MsgSize), 0);
+				Content = calloc(PieceSize, 1);
+				fread(Content, 1, PieceSize, fp);
+				send(fd, Content, strlen(Content), 0);
+				fclose(fp);
+				free(Content);
+			}
+			else
+				send(fd, "0", 1, 0);
 		}
+		else
+		{
+			FileRoot[strlen(FileRoot)-1] = '3';
+			fp = fopen(FileRoot, "rb");
+			if (fp != NULL)
+			{
+				stat(FileRoot, &st);
+				PieceSize = st.st_size;
+				sprintf(MsgSize, "%d", PieceSize);
+				Msg = strlen(MsgSize);
+
+				send(fd, "3", 1, 0);
+				send(fd, (char*)&Msg, sizeof(Msg), 0);
+				send(fd, MsgSize, strlen(MsgSize), 0);
+				Content = calloc(PieceSize, 1);
+				fread(Content, 1, PieceSize, fp);
+				send(fd, Content, strlen(Content), 0);
+				fclose(fp);
+				free(Content);
+			}
+			else
+				send(fd, "0", 1, 0);
+
+			FileRoot[strlen(FileRoot)-1] = '4';
+			fp = fopen(FileRoot, "rb");
+			if (fp != NULL)
+			{
+				stat(FileRoot, &st);
+				PieceSize = st.st_size;
+				sprintf(MsgSize, "%d", PieceSize);
+				Msg = strlen(MsgSize);
+
+				send(fd, "4", 1, 0);
+				send(fd, (char*)&Msg, sizeof(Msg), 0);
+				send(fd, MsgSize, strlen(MsgSize), 0);
+				Content = calloc(PieceSize, 1);
+				fread(Content, 1, PieceSize, fp);
+				send(fd, Content, strlen(Content), 0);
+				fclose(fp);
+				free(Content);
+			}
+			else
+				send(fd, "0", 1, 0);
+		}
+
 	}
 	
-
 	free(filename);
 	free(FileRoot);
 	
@@ -436,7 +517,6 @@ void PUT(char Root[50], int fd)
 		printf("Error reading in file\n");
 
 	memcpy(FileRoot+strlen(FileRoot), filename, strlen(filename));
-	printf("%s\n", FileRoot);
 	FILE *fp = fopen(FileRoot, "w");
 	if (fp == NULL)
 		printf("Error opening %s\n", filename);
@@ -450,6 +530,7 @@ void PUT(char Root[50], int fd)
 	//Receiving the 2nd piece
 	FileRoot = calloc(50, 1);
 	memcpy(FileRoot, Root, strlen(Root));
+
 	bytes = read(fd, (char*) &PieceSize, sizeof(PieceSize));
 	if (bytes < 0)
 		printf("Error reading in Piece Size\n");
@@ -458,8 +539,9 @@ void PUT(char Root[50], int fd)
 	bytes = read(fd, MsgSize, PieceSize);
 	if (bytes < 0)
 		printf("Error reading in Msg Size\n");
-	
-	PieceSize = atoi(MsgSize);
+
+	ContentSize = atoi(MsgSize);
+	printf("ContentSize %d\n", ContentSize);
 	bytes = read(fd, (char*) &NameSize, sizeof(NameSize));
 	if (bytes < 0)
 		printf("Error reading in Filename Size\n");
@@ -469,14 +551,14 @@ void PUT(char Root[50], int fd)
 	if (bytes < 0)
 		printf("Error reading in file name\n");
 
-	ContentPiece = calloc(PieceSize, 1);
-	bytes = read(fd, ContentPiece, PieceSize);
+	ContentPiece = calloc(ContentSize, 1);
+	bytes = read(fd, ContentPiece, ContentSize);
 	if (bytes < 0)
 		printf("Error reading in file\n");
 
 	memcpy(FileRoot+strlen(FileRoot), filename, strlen(filename));
-	printf("%s\n", FileRoot);
 	fp = fopen(FileRoot, "w");
+	
 	if (fp == NULL)
 		printf("Error opening %s\n", filename);
 	fprintf(fp, "%s", ContentPiece);

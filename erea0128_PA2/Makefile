@@ -1,4 +1,4 @@
-all: Server Client
+All: Server Client
 
 Server: dfs.c
 	gcc -Wall dfs.c -o dfs -lcrypto -lssl
