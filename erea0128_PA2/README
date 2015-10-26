@@ -1,0 +1,22 @@
+#CSCI 5273 - Network Systems
+#Programming Assignment 2
+
+#Compiling
+In order to compile, type "make" into the terminal.
+user@cu-cs-vm:~/erea0128_PA2$ make
+
+#Cleanup
+To clean up the executable, type "make clean" into the terminal.
+user@cu-cs-vm:~/erea0128_PA2$ make clean
+
+#Project Description
+The goal of the dfc.c and dfs.c programs are to be able to speak to one another while using the dfs.c programs as a distributed filesystem. Functions PUT, GET, and LIST are implemented as well as subfoldering and encryption, decryption.
+
+The files will be encrypted and decrypted as a whole on the client side, while the server will only save or retrieve the requested files.
+
+When typing commands onto the client side:
+<request> <filename> <subfolder>
+for LIST:
+LIST <subfolder>
+
+All subfolders must contain '/' first. This will not handle subfoldering of a subfolder (not part of the assignment)
