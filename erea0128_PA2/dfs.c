@@ -10,6 +10,7 @@
 #include <sys/errno.h>
 #include <sys/stat.h>
 #include <sys/poll.h>
+#include <dirent.h>
 #include <netinet/in.h>
 #include <netdb.h>
 
@@ -40,7 +41,7 @@ void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
 void GET(char Root[50], int fd);
 void PUT(char Root[50], int fd);
-//void LIST();
+void LIST(char Root[50], int fd);
 
 int main(int argc, char* argv[])
 {
@@ -238,7 +239,8 @@ int main(int argc, char* argv[])
                     } 
                     else if (strcmp(RequestType, "LIST") == 0)
                     {
-                        
+                     	LIST(Root, new_fd);
+                     	break;   
                     }
                 }
             }
@@ -314,12 +316,23 @@ void GET(char Root[50], int fd)
 	char *FileRoot = calloc(50, 1);
 	char MsgSize[15];
 	char *filename, *Content;
-	int bytes, Msg;
+	int bytes, Msg, folderNameSize;
 	FILE *fp;
 	
-	//Receiving the first piece
+	bytes = read(fd, (char*)& folderNameSize, sizeof(folderNameSize));
+	if (bytes < 0)
+		printf("Error getting the subfolder name size\n");
+
+	char *subfolder = calloc(folderNameSize, 1);
+	bytes = read(fd, subfolder, folderNameSize);
+	if (bytes < 0)
+		printf("Error reading in subfolder\n");
+
 	memcpy(FileRoot, Root, strlen(Root));
+	if (folderNameSize != 1)
+		memcpy(FileRoot+strlen(FileRoot), subfolder, folderNameSize);
 	memcpy(FileRoot+strlen(FileRoot), "/.", 2);
+
 	bytes = read(fd, (char*) &NameSize, sizeof(NameSize));
 	if (bytes < 0)
 		printf("Error reading in Filename Size\n");
@@ -328,7 +341,6 @@ void GET(char Root[50], int fd)
 	bytes = read(fd, filename, NameSize);
 	if (bytes < 0)
 		printf("Error reading in file name\n");
-
 	memcpy(FileRoot+strlen(FileRoot), filename, NameSize);
 	memcpy(FileRoot+strlen(FileRoot), ".1", 2);
 	fp = fopen(FileRoot, "rb");
@@ -480,6 +492,7 @@ void GET(char Root[50], int fd)
 	
 	free(filename);
 	free(FileRoot);
+	free(subfolder);
 	
 }
 
@@ -488,10 +501,24 @@ void PUT(char Root[50], int fd)
 	int PieceSize;
 	int NameSize;
 	char *FileRoot = calloc(50, 1);
-	int bytes;
+	int bytes, folderNameSize;
 	
-	//Receiving the first piece
 	memcpy(FileRoot, Root, strlen(Root));
+	bytes = read(fd, (char*)& folderNameSize, sizeof(folderNameSize));
+	if (bytes < 0)
+		printf("Error getting the subfolder name size\n");
+
+	char *subfolder = calloc(folderNameSize, 1);
+	bytes = read(fd, subfolder, folderNameSize);
+	if (bytes < 0)
+		printf("Error reading in subfolder\n");
+
+	if (folderNameSize != 1)
+	{
+		memcpy(FileRoot+strlen(FileRoot), subfolder, folderNameSize);
+		mkdir(FileRoot, 0777);
+	}
+
 	bytes = read(fd, (char*) &PieceSize, sizeof(PieceSize));
 	if (bytes < 0)
 		printf("Error reading in Piece Size\n");
@@ -530,6 +557,8 @@ void PUT(char Root[50], int fd)
 	//Receiving the 2nd piece
 	FileRoot = calloc(50, 1);
 	memcpy(FileRoot, Root, strlen(Root));
+	if (folderNameSize != 1)
+		memcpy(FileRoot+strlen(FileRoot), subfolder, folderNameSize);
 
 	bytes = read(fd, (char*) &PieceSize, sizeof(PieceSize));
 	if (bytes < 0)
@@ -569,9 +598,60 @@ void PUT(char Root[50], int fd)
 	free(FileRoot);
 
 }
-/*
-void LIST()
-{
 
+void LIST(char Root[50], int fd)
+{
+	struct dirent *dir;
+	DIR *directory;
+	char *FileRoot = calloc(50, 1);
+	int filenameSize, count, folderNameSize, bytes, cont;
+	char filename[100];
+	memcpy(FileRoot, Root, strlen(Root));
+
+	bytes = read(fd, (char*)& folderNameSize, sizeof(folderNameSize));
+	if (bytes < 0)
+		printf("Error getting the subfolder name size\n");
+
+	char *subfolder = calloc(folderNameSize, 1);
+	bytes = read(fd, subfolder, folderNameSize);
+	if (bytes < 0)
+		printf("Error reading in subfolder\n");
+	if (folderNameSize != 1)
+		memcpy(FileRoot+strlen(FileRoot), subfolder, folderNameSize);
+	if ((directory = opendir(FileRoot)) == NULL)
+	{
+		cont = 0;
+		send(fd, (char*)&cont, sizeof(cont), 0);
+		printf("Error opening directory to count\n");
+		return;
+	}
+	cont = 1;
+	send(fd, (char*)&cont, sizeof(cont), 0);
+
+	count = 0;
+	while ((dir = readdir(directory)) != NULL)
+	{
+		if (dir->d_type == DT_REG)
+			count++;
+	}
+	closedir(directory);
+	send(fd, (char*)&count, sizeof(count), 0);
+
+	if ((directory = opendir(FileRoot)) == NULL)
+		printf("Error opening directory\n");
+
+	while ((dir = readdir(directory)) != NULL)
+	{
+		if (dir->d_type == DT_REG)
+		{
+			sprintf (filename, "%s", dir->d_name);
+			filenameSize = strlen(filename);
+			printf("%s\n", filename);
+			send(fd, (char*)&filenameSize, sizeof(filenameSize), 0);
+			send(fd, filename, filenameSize, 0);
+		}
+	}
+	closedir(directory);
+	free(FileRoot);
+	free(subfolder);
 }
-*/

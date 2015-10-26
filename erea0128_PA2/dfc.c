@@ -36,20 +36,25 @@ struct conf
 	char *Username;
 	char *Password;
 };
+struct listFiles
+{
+	char filename[BUFSIZE];
+	int Parts[5];
+};
 struct conf parseConfig(char *filename);
 int hashDist(const char *filename);
 int	errexit(const char *format, ...);
 int	connectsock(const char *host, const char *portnum);
 char* XOR(char *string, char *key);
-void GET(struct conf dfcConfig, const char *filename);
-void PUT(struct conf dfcConfig, const char *filename);
-void LIST(struct conf dfcConfig);
+void GET(struct conf dfcConfig, const char *filename, const char *subfolder);
+void PUT(struct conf dfcConfig, const char *filename, const char *subfolder);
+void LIST(struct conf dfcConfig, const char *subfolder);
 
 int main(int argc, char* argv[])
 {
 	struct conf dfcConfig;
 	char *buf = calloc(BUFSIZE, 1);
-	char *string, *line, *token, *request;
+	char *string, *line, *token, *request, *subfolder;
 	char *filename = "\0";
 	int count = 0;
 
@@ -65,31 +70,40 @@ int main(int argc, char* argv[])
 			{
 				if (count == 0)
 					request = token;
-				else
+				else if (count == 1)
 					filename = token;
+				else
+					subfolder = token;
 				count++;
 			}
 			count = 0;
 		}
+		if (!strstr(subfolder, "/"))
+			subfolder = "/";
 		if (strcmp(request, "GET") == 0)
 		{
-			if(strcmp(filename, "\0") != 0)
-				GET(dfcConfig, filename);
+			if(strcmp(filename, "\0") != 0 || !strstr(filename, "/"))
+				GET(dfcConfig, filename, subfolder);
 			else
 				printf("No filename given\n");	
 		}
 		else if (strcmp(request, "PUT") == 0)
 		{	
-			if(strcmp(filename, "\0") != 0)
-				PUT(dfcConfig, filename);
+			if(strcmp(filename, "\0") != 0 || !strstr(filename, "/"))
+				PUT(dfcConfig, filename, subfolder);
 			else
 				printf("No filename given\n");
 		}
 		else if (strcmp(request, "LIST") == 0)
-			LIST(dfcConfig);
+		{
+			if (strstr(filename, "/"))
+				subfolder = filename;
+			LIST(dfcConfig, subfolder);
+		}
 		else
 			printf("Invalid request\n");
 		filename = "\0";
+		subfolder = "\0";
 	}
 	return 0;
 }
@@ -172,7 +186,7 @@ int hashDist(const char *filename)
 	return -1;
 }
 
-void GET(struct conf dfcConfig, const char *filename)
+void GET(struct conf dfcConfig, const char *filename, const char *subfolder)
 {	
 	char *AuthBuf = calloc(BUFSIZE, 1);
 	char *S1Content1, *S1Content2, *S2Content1, *S2Content2, *S3Content1, *S3Content2, *S4Content1, *S4Content2, *MsgSize;
@@ -183,6 +197,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	char *host = "localhost";
 	FILE *fp;
 	int sentAuth, filenameSize, hashType, PieceSize, bytes, ContentSize, dfs1, dfs2, dfs3, dfs4;
+	int folderNameSize = strlen(subfolder);
 
 	filenameSize = strlen(filename);
 	Hashing[0] = 0;
@@ -197,7 +212,7 @@ void GET(struct conf dfcConfig, const char *filename)
 		printf("Failure to send Username authorization to Server 1\n");
 	
 	sentAuth = read(dfs1, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 1 %s\n", AuthBuf);
 
 	if(!strstr(AuthBuf, "Invalid"))
 	{
@@ -207,11 +222,13 @@ void GET(struct conf dfcConfig, const char *filename)
 		
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs1, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 1 %s\n", AuthBuf);
 		
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs1, "GET ", 4, 0);
+			send(dfs1, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs1, subfolder, folderNameSize, 0);
 			send(dfs1, (char*)&filenameSize, sizeof(filenameSize), 0);
 			send(dfs1, filename, strlen(filename), 0);
 
@@ -238,7 +255,6 @@ void GET(struct conf dfcConfig, const char *filename)
 					printf("Error reading in file\n");
 				free(MsgSize);
 			}
-
 			bytes = read(dfs1, ServerPieces, 1);
 			if (bytes < 0)
 				printf("Error reading in second Piece number\n");
@@ -261,7 +277,7 @@ void GET(struct conf dfcConfig, const char *filename)
 				if (bytes < 0)
 					printf("Error reading in file\n");
 				free(MsgSize);
-			}	
+			}
 		}
 	}
 /*----------------------Server 2--------------------------------*/
@@ -272,7 +288,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	
 	memset(AuthBuf, 0, BUFSIZE);
 	sentAuth = read(dfs2, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 2 %s\n", AuthBuf);
 
 	if(!strstr(AuthBuf, "Invalid"))
 	{
@@ -282,11 +298,13 @@ void GET(struct conf dfcConfig, const char *filename)
 		
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs2, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 2 %s\n", AuthBuf);
 		
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs2, "GET ", 4, 0);
+			send(dfs2, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs2, subfolder, folderNameSize, 0);
 			send(dfs2, (char*)&filenameSize, sizeof(filenameSize), 0);
 			send(dfs2, filename, strlen(filename), 0);
 
@@ -316,7 +334,7 @@ void GET(struct conf dfcConfig, const char *filename)
 
 			bytes = read(dfs2, ServerPieces, 1);
 			if (bytes < 0)
-				printf("Error reading in first Piece number\n");
+				printf("Error reading in second Piece number\n");
 			Hash[3] = ServerPieces[0];
 			if (strcmp(ServerPieces, "0") != 0)
 			{
@@ -346,7 +364,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	
 	memset(AuthBuf, 0, BUFSIZE);
 	sentAuth = read(dfs3, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 3 %s\n", AuthBuf);
 
 	if(!strstr(AuthBuf, "Invalid"))
 	{
@@ -356,11 +374,13 @@ void GET(struct conf dfcConfig, const char *filename)
 		
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs3, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 3 %s\n", AuthBuf);
 		
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs3, "GET ", 4, 0);
+			send(dfs3, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs3, subfolder, folderNameSize, 0);
 			send(dfs3, (char*)&filenameSize, sizeof(filenameSize), 0);
 			send(dfs3, filename, strlen(filename), 0);
 
@@ -387,10 +407,9 @@ void GET(struct conf dfcConfig, const char *filename)
 					printf("Error reading in file\n");
 				free(MsgSize);
 			}
-
 			bytes = read(dfs3, ServerPieces, 1);
 			if (bytes < 0)
-				printf("Error reading in first Piece number\n");
+				printf("Error reading in second Piece number\n");
 			Hash[5] = ServerPieces[0];
 			if (strcmp(ServerPieces, "0") != 0)
 			{
@@ -420,7 +439,7 @@ void GET(struct conf dfcConfig, const char *filename)
 	
 	memset(AuthBuf, 0, BUFSIZE);	
 	sentAuth = read(dfs4, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 4 %s\n", AuthBuf);
 
 	if(!strstr(AuthBuf, "Invalid"))
 	{
@@ -430,11 +449,13 @@ void GET(struct conf dfcConfig, const char *filename)
 		
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs4, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 4 %s\n", AuthBuf);
 		
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs4, "GET ", 4, 0);
+			send(dfs4, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs4, subfolder, folderNameSize, 0);
 			send(dfs4, (char*)&filenameSize, sizeof(filenameSize), 0);
 			send(dfs4, filename, strlen(filename), 0);
 
@@ -464,7 +485,7 @@ void GET(struct conf dfcConfig, const char *filename)
 
 			bytes = read(dfs4, ServerPieces, 1);
 			if (bytes < 0)
-				printf("Error reading in first Piece number\n");
+				printf("Error reading in second Piece number\n");
 			Hash[7] = ServerPieces[0];
 			if (strcmp(ServerPieces, "0") != 0)
 			{
@@ -490,18 +511,10 @@ void GET(struct conf dfcConfig, const char *filename)
 	if(Hashing[1] == 0 || Hashing[2] == 0 || Hashing[3] == 0 || Hashing[4] == 0)
 	{
 		printf("%s File is incomplete\n", filename);
-		free(S1Content1);
-		free(S1Content2);
-		free(S2Content1);
-		free(S2Content2);
-		free(S3Content1);
-		free(S3Content2);
-		free(S4Content1);
-		free(S4Content2);
 		free(AuthBuf);
-		free(MsgSize);
 		free(Hashing);
 		free(Hash);
+		return;
 	}
 /*------------Put files back together and write to file---------*/	
 	strcpy(Root, "./Client/");
@@ -604,13 +617,13 @@ void GET(struct conf dfcConfig, const char *filename)
 	free(S3Content2);
 	free(S4Content1);
 	free(S4Content2);
+	free(TotalContent);
 	free(AuthBuf);
-	free(MsgSize);
 	free(Hashing);
 	free(Hash);
 }
 
-void PUT(struct conf dfcConfig, const char *filename)
+void PUT(struct conf dfcConfig, const char *filename, const char *subfolder)
 {
 	struct stat st;
 	char root[50];
@@ -619,6 +632,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 	char LastMsgSize[15];
 	char *AuthBuf = calloc(BUFSIZE, 1);
 	int PieceSize, dist, LastSize, sentAuth, dfs1, dfs2, dfs3, dfs4;
+	int folderNameSize = strlen(subfolder);
 	char *host = "localhost";
 	
 	strcpy(root, "./");
@@ -675,7 +689,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 		printf("Failure to send Username authorization to Server 1\n");
 	
 	sentAuth = read(dfs1, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 1 %s\n", AuthBuf);
 
 	if(!strstr(AuthBuf, "Invalid"))
 	{
@@ -684,11 +698,13 @@ void PUT(struct conf dfcConfig, const char *filename)
 			printf("Failure to send Password authorization to Server 1\n");
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs1, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 1 %s\n", AuthBuf);
 		
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs1, "PUT ", 4, 0);
+			send(dfs1, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs1, subfolder, folderNameSize, 0);
 			switch(dist)
 			{
 				case 0 ://dfs1 (1,2)
@@ -765,7 +781,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 	
 	memset(AuthBuf, 0, BUFSIZE);
 	sentAuth = read(dfs2, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 2 %s\n", AuthBuf);
 
 	if(!strstr(AuthBuf, "Invalid"))
 	{
@@ -775,11 +791,13 @@ void PUT(struct conf dfcConfig, const char *filename)
 		
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs2, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 2 %s\n", AuthBuf);
 
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs2, "PUT ", 4, 0);
+			send(dfs2, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs2, subfolder, folderNameSize, 0);
 			switch(dist)
 			{
 				case 0 ://dfs2 (2,3)
@@ -857,7 +875,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 	
 	memset(AuthBuf, 0, BUFSIZE);
 	sentAuth = read(dfs3, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 3 %s\n", AuthBuf);
 	if(!strstr(AuthBuf, "Invalid"))
 	{
 		sentAuth = send(dfs3, dfcConfig.Password, strlen(dfcConfig.Password), 0);
@@ -866,11 +884,13 @@ void PUT(struct conf dfcConfig, const char *filename)
 		
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs3, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 3 %s\n", AuthBuf);
 		
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs3, "PUT ", 4, 0);
+			send(dfs3, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs3, subfolder, folderNameSize, 0);
 			switch(dist)
 			{
 				case 0 ://dfs3 (3,4)
@@ -948,7 +968,7 @@ void PUT(struct conf dfcConfig, const char *filename)
 	
 	memset(AuthBuf, 0, BUFSIZE);
 	sentAuth = read(dfs4, AuthBuf, BUFSIZE);
-	printf("%s\n", AuthBuf);
+	printf("Server 4 %s\n", AuthBuf);
 	if(!strstr(AuthBuf, "Invalid"))
 	{
 		sentAuth = send(dfs4, dfcConfig.Password, strlen(dfcConfig.Password), 0);
@@ -957,11 +977,13 @@ void PUT(struct conf dfcConfig, const char *filename)
 		
 		memset(AuthBuf, 0, BUFSIZE);
 		sentAuth = read(dfs4, AuthBuf, BUFSIZE);
-		printf("%s\n", AuthBuf);
+		printf("Server 4 %s\n", AuthBuf);
 		
 		if(!strstr(AuthBuf, "Invalid"))
 		{
 			send(dfs4, "PUT ", 4, 0);
+			send(dfs4, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs4, subfolder, folderNameSize, 0);
 			switch(dist)
 			{
 				case 0 ://dfs4(4,1)
@@ -1036,22 +1058,558 @@ void PUT(struct conf dfcConfig, const char *filename)
 	free(part2);
 	free(part3);
 	free(part4);
-
+	free(AuthBuf);
+	free(OrigFile);
 }
 
-void LIST(struct conf dfcConfig)
+void LIST(struct conf dfcConfig, const char *subfolder)
 {
+	struct listFiles *Server1;
+	struct listFiles *Server2;
+	struct listFiles *Server3;
+	struct listFiles *Server4;
+	char *AuthBuf = calloc(BUFSIZE, 1);
+	int bytes, sentAuth, dfs1, dfs2, dfs3, dfs4, index, filenameSize;
+	int files1 = 0;
+	int files2 = 0;
+	int files3 = 0;
+	int files4 = 0;
+	int cont = 0;
+	char *host = "localhost";
+	int folderNameSize = strlen(subfolder);
 
 /*----------------------Server 1--------------------------------*/
-
-/*----------------------Server 1--------------------------------*/
+	dfs1 = connectsock(host, dfcConfig.DFS1);
+	sentAuth = send(dfs1, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 1\n");
 	
+	sentAuth = read(dfs1, AuthBuf, BUFSIZE);
+	printf("Server 1 %s\n", AuthBuf);
+
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs1, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 1\n");
+		memset(AuthBuf, 0, BUFSIZE);
+		sentAuth = read(dfs1, AuthBuf, BUFSIZE);
+		printf("Server 1%s\n", AuthBuf);
+		
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs1, "LIST", 4, 0);
+			send(dfs1, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs1, subfolder, folderNameSize, 0);
+			bytes = read(dfs1, (char*)&cont, sizeof(cont));
+			if (bytes < 0)
+				printf("Error reading if valid directory on Server 1\n");
+			if (cont == 1)
+			{
+				bytes = read(dfs1, (char*)&files1, sizeof(files1));
+				if (bytes < 0)
+					printf("Error reading in the number of files on Server 1\n");
+				Server1 = calloc(files1, sizeof(Server1));
+				int i = 0;
+				while (i < files1)
+				{
+					strcpy(Server1[i].filename, "");
+					Server1[i].Parts[0] = 0;
+					Server1[i].Parts[1] = 0;
+					Server1[i].Parts[2] = 0;
+					Server1[i].Parts[3] = 0;
+					Server1[i].Parts[4] = 0;
+					i++;
+				}
+
+				index = 0;
+				while (index < files1)
+				{
+					bytes = read(dfs1, (char*)&filenameSize, sizeof(filenameSize));
+					if (bytes < 0)
+						printf("Error reading in the size of the file name on Server 1\n");
+					
+					char filename[filenameSize];
+					bytes = read(dfs1, filename, filenameSize);
+					if (bytes < 0)
+						printf("Error reading in the file name on Server 1\n");
+					
+					int pt;
+					if (filename[filenameSize - 1] == '1')
+						pt = 1;
+					else if (filename[filenameSize - 1] == '2')
+						pt = 2;
+					else if (filename[filenameSize - 1] == '3')
+						pt = 3;
+					else
+						pt = 4;
+
+					filename[filenameSize - 2] = '\0';
+					char* name = filename;
+					name++;
+
+					i = 0;
+					while (i <= index)
+					{
+						if (strcmp(Server1[i].filename, "") == 0)
+						{
+							strcpy(Server1[i].filename, name);
+							Server1[i].Parts[pt] = 1;
+							break;
+						}
+						else if (strcmp(Server1[i].filename, name) == 0)
+						{
+							Server1[i].Parts[pt] = 1;
+							break;
+						}
+						else
+							i++;
+					}
+					index++;
+				}
+			}
+			else
+				printf("Invalid directory on Server 1\n");
+		}
+	}
+/*----------------------Server 2--------------------------------*/
+	dfs2 = connectsock(host, dfcConfig.DFS2);
+	sentAuth = send(dfs2, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 2\n");
+	
+	sentAuth = read(dfs2, AuthBuf, BUFSIZE);
+	printf("Server 2 %s\n", AuthBuf);
+
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs2, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 2\n");
+		memset(AuthBuf, 0, BUFSIZE);
+		sentAuth = read(dfs2, AuthBuf, BUFSIZE);
+		printf("Server 2 %s\n", AuthBuf);
+		
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs2, "LIST", 4, 0);
+			send(dfs2, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs2, subfolder, folderNameSize, 0);
+			bytes = read(dfs2, (char*)&cont, sizeof(cont));
+			if (bytes < 0)
+				printf("Error reading if valid directory on Server 2\n");
+			if (cont == 1)
+			{
+				bytes = read(dfs2, (char*)&files2, sizeof(files2));
+				if (bytes < 0)
+					printf("Error reading in the number of files on Server 2\n");
+				Server2 = calloc(files2, sizeof(Server2));
+				int i = 0;
+				while (i < files2)
+				{
+					strcpy(Server2[i].filename, "");
+					Server2[i].Parts[0] = 0;
+					Server2[i].Parts[1] = 0;
+					Server2[i].Parts[2] = 0;
+					Server2[i].Parts[3] = 0;
+					Server2[i].Parts[4] = 0;
+					i++;
+				}
+
+				index = 0;
+				while (index < files2)
+				{
+					bytes = read(dfs2, (char*)&filenameSize, sizeof(filenameSize));
+					if (bytes < 0)
+						printf("Error reading in the size of the file name on Server 2\n");
+					
+					char filename[filenameSize];
+					bytes = read(dfs2, filename, filenameSize);
+					if (bytes < 0)
+						printf("Error reading in the file name on Server 2\n");
+					
+					int pt;
+					if (filename[filenameSize - 1] == '1')
+						pt = 1;
+					else if (filename[filenameSize - 1] == '2')
+						pt = 2;
+					else if (filename[filenameSize - 1] == '3')
+						pt = 3;
+					else
+						pt = 4;
+
+					filename[filenameSize - 2] = '\0';
+					char* name = filename;
+					name++;
+
+					i = 0;
+					while (i <= index)
+					{
+						if (strcmp(Server2[i].filename, "") == 0)
+						{
+							strcpy(Server2[i].filename, name);
+							Server2[i].Parts[pt] = 1;
+							break;
+						}
+						else if (strcmp(Server2[i].filename, name) == 0)
+						{
+							Server2[i].Parts[pt] = 1;
+							break;
+						}
+						else
+							i++;
+					}
+					index++;
+				}	
+			}
+			else
+				printf("Invalid directory on Server 2\n");
+		}
+	}
 /*----------------------Server 3--------------------------------*/
+	dfs3 = connectsock(host, dfcConfig.DFS3);
+	sentAuth = send(dfs3, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 3\n");
 	
+	sentAuth = read(dfs3, AuthBuf, BUFSIZE);
+	printf("Server 3 %s\n", AuthBuf);
+
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs3, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 3\n");
+		memset(AuthBuf, 0, BUFSIZE);
+		sentAuth = read(dfs3, AuthBuf, BUFSIZE);
+		printf("Server 3 %s\n", AuthBuf);
+		
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs3, "LIST", 4, 0);
+			send(dfs3, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs3, subfolder, folderNameSize, 0);
+			bytes = read(dfs3, (char*)&cont, sizeof(cont));
+			if (bytes < 0)
+				printf("Error reading if valid directory on Server 3\n");
+			if (cont == 1)
+			{
+				bytes = read(dfs3, (char*)&files3, sizeof(files3));
+				if (bytes < 0)
+					printf("Error reading in the number of files on Server 3\n");
+				Server3 = calloc(files3, sizeof(Server3));
+				int i = 0;
+				while (i < files3)
+				{
+					strcpy(Server3[i].filename, "");
+					Server3[i].Parts[0] = 0;
+					Server3[i].Parts[1] = 0;
+					Server3[i].Parts[2] = 0;
+					Server3[i].Parts[3] = 0;
+					Server3[i].Parts[4] = 0;
+					i++;
+				}
+
+				index = 0;
+				while (index < files3)
+				{
+					bytes = read(dfs3, (char*)&filenameSize, sizeof(filenameSize));
+					if (bytes < 0)
+						printf("Error reading in the size of the file name on Server 3\n");
+					
+					char filename[filenameSize];
+					bytes = read(dfs3, filename, filenameSize);
+					if (bytes < 0)
+						printf("Error reading in the file name on Server 3\n");
+					
+					int pt;
+					if (filename[filenameSize - 1] == '1')
+						pt = 1;
+					else if (filename[filenameSize - 1] == '2')
+						pt = 2;
+					else if (filename[filenameSize - 1] == '3')
+						pt = 3;
+					else
+						pt = 4;
+
+					filename[filenameSize - 2] = '\0';
+					char* name = filename;
+					name++;
+
+					i = 0;
+					while (i <= index)
+					{
+						if (strcmp(Server3[i].filename, "") == 0)
+						{
+							strcpy(Server3[i].filename, name);
+							Server3[i].Parts[pt] = 1;
+							break;
+						}
+						else if (strcmp(Server3[i].filename, name) == 0)
+						{
+							Server3[i].Parts[pt] = 1;
+							break;
+						}
+						else
+							i++;
+					}
+					index++;
+				}
+			}
+			else
+				printf("Invalid directory on Server 3\n");
+		}	
+	}
 /*----------------------Server 4--------------------------------*/
+	dfs4 = connectsock(host, dfcConfig.DFS4);
+	sentAuth = send(dfs4, dfcConfig.Username, strlen(dfcConfig.Username), 0);
+	if (sentAuth == 0)
+		printf("Failure to send Username authorization to Server 4\n");
+	
+	sentAuth = read(dfs4, AuthBuf, BUFSIZE);
+	printf("Server 4 %s\n", AuthBuf);
 
+	if(!strstr(AuthBuf, "Invalid"))
+	{
+		sentAuth = send(dfs4, dfcConfig.Password, strlen(dfcConfig.Password), 0);
+		if (sentAuth == 0)
+			printf("Failure to send Password authorization to Server 4\n");
+		memset(AuthBuf, 0, BUFSIZE);
+		sentAuth = read(dfs4, AuthBuf, BUFSIZE);
+		printf("Server 4 %s\n", AuthBuf);
+		
+		if(!strstr(AuthBuf, "Invalid"))
+		{
+			send(dfs4, "LIST", 4, 0);
+			send(dfs4, (char*)& folderNameSize, sizeof(folderNameSize), 0);
+			send(dfs4, subfolder, folderNameSize, 0);
+			bytes = read(dfs4, (char*)&cont, sizeof(cont));
+			if (bytes < 0)
+				printf("Error reading if valid directory on Server 4\n");
+			if (cont == 1)
+			{
+				bytes = read(dfs4, (char*)&files4, sizeof(files4));
+				if (bytes < 0)
+					printf("Error reading in the number of files on Server 4\n");
+				Server4 = calloc(files4, sizeof(Server4));
+				int i = 0;
+				while (i < files4)
+				{
+					strcpy(Server4[i].filename, "");
+					Server4[i].Parts[0] = 0;
+					Server4[i].Parts[1] = 0;
+					Server4[i].Parts[2] = 0;
+					Server4[i].Parts[3] = 0;
+					Server4[i].Parts[4] = 0;
+					i++;
+				}
+
+				index = 0;
+				while (index < files4)
+				{
+					bytes = read(dfs4, (char*)&filenameSize, sizeof(filenameSize));
+					if (bytes < 0)
+						printf("Error reading in the size of the file name on Server 4\n");
+					
+					char filename[filenameSize];
+					bytes = read(dfs4, filename, filenameSize);
+					if (bytes < 0)
+						printf("Error reading in the file name on Server 4\n");
+					
+					int pt;
+					if (filename[filenameSize - 1] == '1')
+						pt = 1;
+					else if (filename[filenameSize - 1] == '2')
+						pt = 2;
+					else if (filename[filenameSize - 1] == '3')
+						pt = 3;
+					else
+						pt = 4;
+
+					filename[filenameSize - 2] = '\0';
+					char* name = filename;
+					name++;
+
+					i = 0;
+					while (i <= index)
+					{
+						if (strcmp(Server4[i].filename, "") == 0)
+						{
+							strcpy(Server4[i].filename, name);
+							Server4[i].Parts[pt] = 1;
+							break;
+						}
+						else if (strcmp(Server4[i].filename, name) == 0)
+						{
+							Server4[i].Parts[pt] = 1;
+							break;
+						}
+						else
+							i++;
+					}
+					index++;
+				}
+			}
+			else
+				printf("Invalid directory on Server 4\n");
+		}
+	}
 /*------------Compare the number of files-----------------------*/
+	if (files1 == 0 && files2 == 0 && files3 == 0 && files4 == 0)
+		return;
+	int TotalFiles;
+	if (files1 == files2 && files2 == files3 && files3 == files4)
+		TotalFiles = files1;
+	else if (files1 < files2 && files3 < files2 && files4 < files2)
+		TotalFiles = files2;
+	else if (files1 < files3 && files2 < files3 && files4 < files3)
+		TotalFiles = files3;
+	else if (files1 < files4 && files2 < files4 && files3 < files4)
+		TotalFiles = files4;
+	else
+		TotalFiles = files1;
 
+	struct listFiles Total[TotalFiles];
+	int i = 0;
+	while (i < TotalFiles)
+	{
+		strcpy(Total[i].filename, "");
+		Total[i].Parts[0] = 0;
+		Total[i].Parts[1] = 0;
+		Total[i].Parts[2] = 0;
+		Total[i].Parts[3] = 0;
+		Total[i].Parts[4] = 0;
+		i++;
+	}
+	index = 0;
+
+	while (index < files1)
+	{
+		strcpy(Total[index].filename, Server1[index].filename);
+		Total[index].Parts[1] = Server1[index].Parts[1];
+		Total[index].Parts[2] = Server1[index].Parts[2];
+		Total[index].Parts[3] = Server1[index].Parts[3];
+		Total[index].Parts[4] = Server1[index].Parts[4];
+		index++;
+	}
+
+	index = 0;
+	while (index < files2)
+	{
+		if (strcmp(Server2[index].filename, "") == 0)
+			break;
+		int i = 0;
+		while (i < TotalFiles)
+		{
+			if (strcmp(Total[i].filename, Server2[index].filename) == 0)
+			{
+				if (Server2[index].Parts[1] == 1 && Total[i].Parts[1] == 0)
+					Total[i].Parts[1] = 1;
+				if (Server2[index].Parts[2] == 1 && Total[i].Parts[2] == 0)
+					Total[i].Parts[2] = 1;
+				if (Server2[index].Parts[3] == 1 && Total[i].Parts[3] == 0)
+					Total[i].Parts[3] = 1;
+				if (Server2[index].Parts[4] == 1 && Total[i].Parts[4] == 0)
+					Total[i].Parts[4] = 1;
+				break;
+			}
+			else if (strcmp(Total[i].filename, "") == 0)
+			{
+				strcpy(Total[i].filename, Server2[index].filename);
+				Total[i].Parts[1] = Server2[index].Parts[1];
+				Total[i].Parts[2] = Server2[index].Parts[2];
+				Total[i].Parts[3] = Server2[index].Parts[3];
+				Total[i].Parts[4] = Server2[index].Parts[4];
+				break;
+			}
+			else
+				i++;
+		}
+		index++;
+	}
+
+	index = 0;
+	while (index < files3)
+	{
+		if (strcmp(Server3[index].filename, "") == 0)
+			break;
+		int i = 0;
+		while (i < TotalFiles)
+		{
+			if (strcmp(Total[i].filename, Server3[index].filename) == 0)
+			{
+				if (Server3[index].Parts[1] == 1 && Total[i].Parts[1] == 0)
+					Total[i].Parts[1] = 1;
+				if (Server3[index].Parts[2] == 1 && Total[i].Parts[2] == 0)
+					Total[i].Parts[2] = 1;
+				if (Server3[index].Parts[3] == 1 && Total[i].Parts[3] == 0)
+					Total[i].Parts[3] = 1;
+				if (Server3[index].Parts[4] == 1 && Total[i].Parts[4] == 0)
+					Total[i].Parts[4] = 1;
+				break;
+			}
+			else if (strcmp(Total[i].filename, "") == 0)
+			{
+				strcpy(Total[i].filename, Server3[index].filename);
+				Total[i].Parts[1] = Server3[index].Parts[1];
+				Total[i].Parts[2] = Server3[index].Parts[2];
+				Total[i].Parts[3] = Server3[index].Parts[3];
+				Total[i].Parts[4] = Server3[index].Parts[4];
+				break;
+			}
+			else
+				i++;
+		}
+		index++;
+	}
+	index = 0;
+	while (index < files4)
+	{
+		if (strcmp(Server4[index].filename, "") == 0)
+			break;
+		int i = 0;
+		while (i < TotalFiles)
+		{
+			if (strcmp(Total[i].filename, Server4[index].filename) == 0)
+			{
+				if (Server4[index].Parts[1] == 1 && Total[i].Parts[1] == 0)
+					Total[i].Parts[1] = 1;
+				if (Server4[index].Parts[2] == 1 && Total[i].Parts[2] == 0)
+					Total[i].Parts[2] = 1;
+				if (Server4[index].Parts[3] == 1 && Total[i].Parts[3] == 0)
+					Total[i].Parts[3] = 1;
+				if (Server4[index].Parts[4] == 1 && Total[i].Parts[4] == 0)
+					Total[i].Parts[4] = 1;
+				break;
+			}
+			else if (strcmp(Total[i].filename, "") == 0)
+			{
+				strcpy(Total[i].filename, Server4[index].filename);
+				Total[i].Parts[1] = Server4[index].Parts[1];
+				Total[i].Parts[2] = Server4[index].Parts[2];
+				Total[i].Parts[3] = Server4[index].Parts[3];
+				Total[i].Parts[4] = Server4[index].Parts[4];
+				break;
+			}
+			else
+				i++;
+		}
+		index++;
+	}
+	index = 0;
+	printf("LIST\n");
+	while (index <= TotalFiles)
+	{
+		if (strcmp(Total[index].filename, "") == 0)
+			break;
+		if (Total[index].Parts[1] == 1 && Total[index].Parts[2] == 1 && Total[index].Parts[3] == 1 && Total[index].Parts[4] == 1)
+			printf("%s\n", Total[index].filename);
+		else
+			printf("%s [incomplete]\n", Total[index].filename);
+		index++;
+	}
+	printf("\n");
+	free(AuthBuf);
 }
 
 char* XOR(char *string, char *key)
