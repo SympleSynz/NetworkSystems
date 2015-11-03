@@ -1,0 +1,12 @@
+#CSCI 5273 - Network Systems
+#Programming Assignment 3
+
+#Compiling
+In order to compile, type "make" into the terminal.
+user@cu-cs-vm:~/erea0128_PA3$ make
+
+#Cleanup
+To clean up the executable, type "make clean" into the terminal.
+user@cu-cs-vm:~/erea0128_PA3$ make clean
+
+#Project Description
