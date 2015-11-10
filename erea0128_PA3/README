@@ -10,3 +10,4 @@ To clean up the executable, type "make clean" into the terminal.
 user@cu-cs-vm:~/erea0128_PA3$ make clean
 
 #Project Description
+Creating a webproxy to work with Mozilla Firefox. The webproxy is meant to take the request from Firefox, verify that the header and request is correct (if not, send back an error) and forward the request to the actual server. Once the server starts to send back the requested content, the webproxy will cache .jpg/.png files.

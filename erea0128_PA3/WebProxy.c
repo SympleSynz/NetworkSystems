@@ -30,24 +30,25 @@ extern int  errno;
 
 void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
+int connectsock(const char *host, const char *portnum);
+int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version);
 
 int main(int argc, char* argv[])
 {
-	int client, new_fd, rv, bytes, AuthBool, pollRtn;  
+	int client, new_fd, rv, bytes, pollRtn, length, index;  
     struct addrinfo hints, *servinfo, *p;
     struct sockaddr_storage their_addr; 
     socklen_t sin_size;
     struct sigaction sa;
     int yes = 1;
-    char *portnum = "8080";
+    char *line, *token, *Method, *URI, *Version, *portnum;
     char s[INET6_ADDRSTRLEN];
     char Request[BUFSIZE];
 
-    if(argc < 3)
-    {
-    	fprintf(stderr, "\nIncorrect number of arguments\n");
-        exit(1);
-    }
+    if(argc < 2)
+    	portnum = "8080";
+    else
+    	portnum = argv[1];
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
@@ -107,7 +108,7 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    printf("\nserver port %s: waiting for connections...\n", argv[2]);
+    printf("\nserver port %s: waiting for connections...\n", argv[1]);
 //Main accept() loop for dfs
     while(1) 
     {  
@@ -122,32 +123,120 @@ int main(int argc, char* argv[])
         inet_ntop(their_addr.ss_family, //tells us if we got a connection
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
-        printf("server port %s: got connection from %s\n", argv[2], s);
+        printf("server port %s: got connection from %s\n", argv[1], s);
 
 		//Start listening for content
 		if (!fork()) // We fork to allow the child process to complete the request
         { 
             (void) close(client); // child doesn't need the listener
             while(1)
-            {   
-            	memset(Request, 0, 4);
-            	read(new_fd, Request, 4);
+            {   printf("Child Process %d\n", getpid());
+            	memset(Request, 0, BUFSIZE);
+            	bytes = read(new_fd, Request, BUFSIZE); //read in the client header into buf
+			    if (bytes < 0)
+			    {
+			        return ErrorHandle(0, 500, new_fd, Method, URI, Version);
+			        fputs("Error reading file", stderr);
+			        break;
+			    }
+			    
+			    printf("Request: %s\n", Request);
+			    
+			    length = strlen(Request);
+			    printf("length: %d\n", length);
+			    char TempBuff[length];
+			    //memset(TempBuff, 0, BUFSIZE);
+			    memcpy(TempBuff, Request, length);
+			    
+			    printf("TempBuff: %s\n", TempBuff);
+			    
+			    char *string = TempBuff;
 
-				/*struct pollfd ufds[1]; //This struct is used for the poll() for timing
-                ufds[0].fd = new_fd;
-                ufds[0].events = POLLIN;
-                pollRtn = poll(ufds, 1, 1000);
-                if (pollRtn == -1) //Error when getting a poll
-                    printf("Error when creating poll for child fork\n");   
-                else if (pollRtn == 0) //timed out
-                {
-                    printf("%d Timed out\n", getpid());
-                    break;
-                }
-                else //Otherwise, continue with fulfilling the client request
-                {
-                	
-                }*/
+			    line = strsep(&string, "\n");
+			    index = 0;
+			    while((token = strsep(&line, " ")) != NULL)
+	            {
+	                if (index == 0)
+	                    Method = token;
+	                else if (index == 1)
+	                    URI = token;
+	                else
+	                    Version = token;
+	                index++;
+	            }
+	            printf("Request: %s\n", Request);
+	            printf("TempBuff: %s\n", TempBuff);
+	            printf("Method: %s\n", Method);
+	            printf("URI: %s\n", URI);
+	            printf("Version: %s\n", Version);
+	            if (Version != NULL) //Need to remove the return and newline characters to do a comparison for 400 error
+			    {   
+			        length = strlen(Version); 
+			        if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
+			            Version[length-1] = '\0';
+			    }
+				if (strcmp(Method,"GET") != 0)
+				{
+				 	ErrorHandle(1, 400, new_fd, Method, URI, Version);
+				 	break;
+				}
+				else if (strstr(URI, "[") || strstr(URI, "]"))
+				{
+				    ErrorHandle(2, 400, new_fd, Method, URI, Version);
+				    break;
+				}
+				else if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
+				{
+				    ErrorHandle(3, 400, new_fd, Method, URI, Version);
+				    break;
+				}
+				else
+				{
+					printf("Here\n");
+					char *temp = strtok(URI, "//");
+					printf("temp: %s\n", temp);
+					temp = strtok(NULL, "/");
+					URI = temp;
+					printf("temp: %s\n", temp);
+					printf("URI: %s\n", URI);
+					/*struct pollfd ufds[1]; //This struct is used for the poll() for timing
+	                ufds[0].fd = new_fd;
+	                ufds[0].events = POLLIN;
+	                pollRtn = poll(ufds, 1, 1000);
+	                if (pollRtn == -1) //Error when getting a poll
+	                    printf("Error when creating poll for child fork\n");   
+	                else if (pollRtn == 0) //timed out
+	                {
+	                    printf("%d Timed out\n", getpid());
+	                    break;
+	                }
+	                else //Otherwise, continue with fulfilling the client request*/
+
+				    int fd = connectsock(URI, "80");
+					bytes = send(fd, Request, strlen(Request), 0);
+					printf("bytes: %d\n", bytes);
+					if (bytes < 0)
+					{
+						return ErrorHandle(0, 500, new_fd, Method, URI, Version);
+				        fputs("Error Sending Request", stderr);
+				        break;
+				    }
+				    char Content[BUFSIZE];
+				    memset(Content, 0, BUFSIZE);
+				    while ((bytes = read(fd, Content, BUFSIZE)) != 0)
+				    {
+				    	printf("Content: %s\n", Content);
+				    	bytes = send(new_fd, Content, strlen(Content), 0);
+						if (bytes < 0)
+						{
+							return ErrorHandle(0, 500, new_fd, Method, URI, Version);
+					        fputs("Error Reading Content", stderr);
+					        break;
+					    }
+					    else
+					    	memset(Content, 0, BUFSIZE);
+				    }
+				}
             }
             printf("Connection %d closed\n", new_fd);
             (void) close(new_fd); //Close the file descriptor for the child process
@@ -179,28 +268,96 @@ int connectsock(const char *host, const char *portnum)
     struct sockaddr_in sin; /* an Internet endpoint address         */
     int s;              	/* socket descriptor                    */
 
-
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
 
 	/* Map port number (char string) to port number (int)*/
     if ((sin.sin_port=htons((unsigned short)atoi(portnum))) == 0)
-            errexit("can't get \"%s\" port number\n", portnum);
+    {
+        printf("can't get \"%s\" port number\n", portnum);
+    	return -1;
+    }
 
 	/* Map host name to IP address, allowing for dotted decimal */
     if ((phe = gethostbyname(host)))
-            memcpy(&sin.sin_addr, phe->h_addr, phe->h_length);
+        memcpy(&sin.sin_addr, phe->h_addr, phe->h_length);
     else if ( (sin.sin_addr.s_addr = inet_addr(host)) == INADDR_NONE )
-            errexit("can't get \"%s\" host entry\n", host);
+    {
+        printf("can't get \"%s\" host entry\n", host);
+    	return -1;
+    }
 
 	/* Allocate a socket */
     s = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s < 0)
-            errexit("can't create socket: %s\n", strerror(errno));
+    {
+        printf("can't create socket: %s\n", strerror(errno));
+    	return -1;
+    }
 
 	/* Connect the socket */
     if (connect(s, (struct sockaddr *)&sin, sizeof(sin)) < 0)
-            errexit("can't connect to %s.%s: %s\n", host, portnum,
-                    strerror(errno));
+    {
+        printf("can't connect to %s.%s: %s\n", host, portnum,
+            strerror(errno));
+        return -1;
+    }
     return s;
+}
+
+int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
+{
+    char error[BUFSIZE];
+    char errorMsg[BUFSIZE];
+    char length[256]; 
+    //have to build the header to send back to the client even for the error
+    if (code == 400)
+    {   
+        if (d == 1)
+        {
+            memcpy(error, "HTTP/1.1 400 Bad Request: Invalid Method: ", 42);
+            memcpy(error + strlen(error), Method, strlen(Method));
+        }
+        else if (d == 2)
+        {
+            memcpy(error, "HTTP/1.1 400 Bad Request: Invalid URI: ", 39);
+            memcpy(error + strlen(error), URI, strlen(URI));
+        }
+        else
+        {
+            memcpy(error, "HTTP/1.1 400 Bad Request: Invalid HTTP-Version: ", 47);
+            memcpy(error + strlen(error), Version, strlen(Version));
+        }
+    }
+
+    else if (code == 404)
+    {
+        memcpy(error, "HTTP/1.1 404 Not Found: ", 24);
+        memcpy(error + strlen(error), URI, strlen(URI));
+    }
+    else if (code == 500)
+    {
+        memcpy(error, "HTTP/1.1 500 Internal Server Error", 33);
+        memcpy(errorMsg, error, strlen(error));
+    }
+    else
+    {
+        memcpy(error, "HTTP/1.1 501 Not Implemented: ", 30);
+        memcpy(error + strlen(error), URI, strlen(URI));
+    }
+    memcpy(errorMsg, "<html><em> ", 11);
+    memcpy(errorMsg + strlen(errorMsg), error, strlen(error));
+    memcpy(errorMsg + strlen(errorMsg), " </em></html>", 13);
+    sprintf(length, "%ld", strlen(errorMsg));
+    
+    error[strlen(error)] = '\n';    
+    memcpy(error + strlen(error), "Content-type: text/html\n", 24);
+    memcpy(error + strlen(error), "Content-length: ", 16);
+    memcpy(error + strlen(error), length, strlen(length));
+
+    error[strlen(error)] = '\n';
+    error[strlen(error)] = '\n';
+    send(fd, error, strlen(error), 0);
+    send(fd, errorMsg, strlen(errorMsg), 0);
+    return 0;
 }
