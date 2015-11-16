@@ -35,13 +35,14 @@ int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
 
 int main(int argc, char* argv[])
 {
-	int client, new_fd, rv, bytes, pollRtn, length, index;  
+	int client, new_fd, rv, bytes, length;  
     struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; 
+    struct sockaddr_storage their_addr;
     socklen_t sin_size;
     struct sigaction sa;
     int yes = 1;
-    char *line, *token, *Method, *URI, *Version, *portnum;
+    char *Method = NULL, *URI = NULL, *Version = NULL, *portnum = NULL;
+    char token1[300], token2[300], token3[300];
     char s[INET6_ADDRSTRLEN];
     char Request[BUFSIZE];
 
@@ -98,7 +99,7 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-//Handling all the child processes
+	//Handling all the child processes
     sa.sa_handler = sigchld_handler; // reap all dead processes
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
@@ -108,8 +109,8 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    printf("\nserver port %s: waiting for connections...\n", argv[1]);
-//Main accept() loop for dfs
+    printf("\nserver port %s: waiting for connections...\n", portnum);
+	//Main accept() loop for webproxy
     while(1) 
     {  
         sin_size = sizeof their_addr;
@@ -123,127 +124,127 @@ int main(int argc, char* argv[])
         inet_ntop(their_addr.ss_family, //tells us if we got a connection
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
-        printf("server port %s: got connection from %s\n", argv[1], s);
+        printf("server port %s: got connection from %s\n", portnum, s);
 
 		//Start listening for content
 		if (!fork()) // We fork to allow the child process to complete the request
         { 
             (void) close(client); // child doesn't need the listener
-            while(1)
-            {   printf("Child Process %d\n", getpid());
-            	memset(Request, 0, BUFSIZE);
-            	bytes = read(new_fd, Request, BUFSIZE); //read in the client header into buf
-			    if (bytes < 0)
+        	memset(Request, 0, BUFSIZE);
+        	bytes = read(new_fd, Request, BUFSIZE); //read in the client header into buf
+        	if (bytes == 0)
+        		break;
+		    if (bytes < 0)
+		    {
+		        ErrorHandle(0, 500, new_fd, Method, URI, Version);
+		        fputs("Error reading file", stderr);
+		        break;
+		    }
+		    
+		    printf("Request before token: %s\n", Request);
+		    sscanf(Request, "%s" "%s" "%s", token1, token2, token3);
+		    Method = token1;
+		    URI = token2;
+		    Version = token3;
+		    printf("Request: %s\n", Request);
+            printf("Method: %s\n", Method);
+            printf("URI: %s\n", URI);
+            printf("Version: %s\n", Version);
+            if (Version != NULL) //Need to remove the return and newline characters to do a comparison for 400 error
+		    {   
+		        length = strlen(Version); 
+		        if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
+		            Version[length-1] = '\0';
+		    }
+			if (strcmp(Method,"GET") != 0)
+			{
+			 	ErrorHandle(1, 400, new_fd, Method, URI, Version);
+			 	break;
+			}
+			else if (strstr(URI, "[") || strstr(URI, "]"))
+			{
+			    ErrorHandle(2, 400, new_fd, Method, URI, Version);
+			    break;
+			}
+			else if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
+			{
+			    ErrorHandle(3, 400, new_fd, Method, URI, Version);
+			    break;
+			}
+			else
+			{
+				char *temp;
+				strcpy(token1,token2);
+				int flag = 0;
+			   	int i = 7;
+				while (i < strlen(token2))
+				{
+					if (token2[i] == ':')
+					{
+						flag = 1;
+						break;
+					}
+					i++;
+				}
+		   
+				temp = strtok(token2,"//");
+				if (flag == 0)
+					temp = strtok(NULL,"/");
+				else
+					temp = strtok(NULL,":");
+		   
+				sprintf(token2,"%s",temp);
+				printf("host = %s",token2);
+		   
+				if(flag==1)
+					temp=strtok(NULL,"/");
+		   
+				strcat(token1,"^]");
+				temp = strtok(token1,"//");
+				temp = strtok(NULL,"/");
+				if(temp!=NULL)
+					temp=strtok(NULL,"^]");
+				printf("\npath = %s\n", temp);
+
+			    int fd = connectsock(URI);
+			    if (fd == -1)
 			    {
-			        return ErrorHandle(0, 500, new_fd, Method, URI, Version);
-			        fputs("Error reading file", stderr);
+			    	ErrorHandle(0, 500, new_fd, Method, URI, Version);
+			    	break;
+			    }
+
+			    memset(Request, 0, BUFSIZE);
+			    if (temp != NULL)
+			    	sprintf(Request,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n",temp,token3,token2);
+				else
+					sprintf(Request,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n",token3,token2);
+
+				bytes = send(fd, Request, strlen(Request), 0);
+
+				if (bytes < 0)
+				{
+					ErrorHandle(0, 500, new_fd, Method, URI, Version);
+			        fputs("Error Sending Request", stderr);
 			        break;
 			    }
-			    
-			    printf("Request: %s\n", Request);
-			    
-			    length = strlen(Request);
-			    printf("length: %d\n", length);
-			    char TempBuff[length];
-			    //memset(TempBuff, 0, BUFSIZE);
-			    memcpy(TempBuff, Request, length);
-			    
-			    printf("TempBuff: %s\n", TempBuff);
-			    
-			    char *string = TempBuff;
-
-			    line = strsep(&string, "\n");
-			    index = 0;
-			    while((token = strsep(&line, " ")) != NULL)
-	            {
-	                if (index == 0)
-	                    Method = token;
-	                else if (index == 1)
-	                    URI = token;
-	                else
-	                    Version = token;
-	                index++;
-	            }
-	            printf("Request: %s\n", Request);
-	            printf("TempBuff: %s\n", TempBuff);
-	            printf("Method: %s\n", Method);
-	            printf("URI: %s\n", URI);
-	            printf("Version: %s\n", Version);
-	            if (Version != NULL) //Need to remove the return and newline characters to do a comparison for 400 error
-			    {   
-			        length = strlen(Version); 
-			        if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
-			            Version[length-1] = '\0';
-			    }
-				if (strcmp(Method,"GET") != 0)
-				{
-				 	ErrorHandle(1, 400, new_fd, Method, URI, Version);
-				 	break;
-				}
-				else if (strstr(URI, "[") || strstr(URI, "]"))
-				{
-				    ErrorHandle(2, 400, new_fd, Method, URI, Version);
-				    break;
-				}
-				else if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
-				{
-				    ErrorHandle(3, 400, new_fd, Method, URI, Version);
-				    break;
-				}
-				else
-				{
-					printf("Here\n");
-					char *temp = strtok(URI, "//");
-					printf("temp: %s\n", temp);
-					temp = strtok(NULL, "/");
-					URI = temp;
-					printf("temp: %s\n", temp);
-					printf("URI: %s\n", URI);
-					/*struct pollfd ufds[1]; //This struct is used for the poll() for timing
-	                ufds[0].fd = new_fd;
-	                ufds[0].events = POLLIN;
-	                pollRtn = poll(ufds, 1, 1000);
-	                if (pollRtn == -1) //Error when getting a poll
-	                    printf("Error when creating poll for child fork\n");   
-	                else if (pollRtn == 0) //timed out
-	                {
-	                    printf("%d Timed out\n", getpid());
-	                    break;
-	                }
-	                else //Otherwise, continue with fulfilling the client request*/
-
-				    int fd = connectsock(URI, "80");
-					bytes = send(fd, Request, strlen(Request), 0);
-					printf("bytes: %d\n", bytes);
-					if (bytes < 0)
+			    else
+			    {
+			    	do
 					{
-						return ErrorHandle(0, 500, new_fd, Method, URI, Version);
-				        fputs("Error Sending Request", stderr);
-				        break;
-				    }
-				    char Content[BUFSIZE];
-				    memset(Content, 0, BUFSIZE);
-				    while ((bytes = read(fd, Content, BUFSIZE)) != 0)
-				    {
-				    	printf("Content: %s\n", Content);
-				    	bytes = send(new_fd, Content, strlen(Content), 0);
-						if (bytes < 0)
-						{
-							return ErrorHandle(0, 500, new_fd, Method, URI, Version);
-					        fputs("Error Reading Content", stderr);
-					        break;
-					    }
-					    else
-					    	memset(Content, 0, BUFSIZE);
-				    }
-				}
-            }
-            printf("Connection %d closed\n", new_fd);
+						memset(Request, 0, BUFSIZE);
+						bytes = read(fd, Request, BUFSIZE);
+						if(!(bytes <= 0))
+							send(new_fd, Request, bytes, 0);
+					}while (bytes > 0);
+			    }
+			}
+            printf("Connection %d closed for pid %d\n", new_fd, getpid());
             (void) close(new_fd); //Close the file descriptor for the child process
             exit(0);
        }
        (void) close(new_fd);  // parent doesn't need this
     }
+    return 0;
 }
 
 void sigchld_handler(int s)
@@ -312,9 +313,9 @@ int connectsock(const char *URI)
     int connectError; 
 
     // ESTABLISH SOCKET
-    if((sock = socket(AF_INET, SOCK_STREAM, 0)) == ERROR){
+    if((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
         perror("socket");
-        exit(-1);
+        return -1;
     }
     // 
     int status;
@@ -330,11 +331,13 @@ int connectsock(const char *URI)
 	if ((status = getaddrinfo(URI, "80", &hints, &servinfo)) != 0) 
 	{
 	    fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
-	    exit(1);
+	    return -1;
 	}
 
 	// CONNECT
     connectError = connect(sock, servinfo->ai_addr, servinfo->ai_addrlen);
+    if (connectError == -1)
+    	return -1;
 
     freeaddrinfo(servinfo); // free the linked-list
 
