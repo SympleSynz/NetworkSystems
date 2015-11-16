@@ -30,7 +30,7 @@ extern int  errno;
 
 void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
-int connectsock(const char *host, const char *portnum);
+int connectsock(const char *URI);
 int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version);
 
 int main(int argc, char* argv[])
@@ -262,23 +262,23 @@ void *get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-int connectsock(const char *host, const char *portnum)
+/*int connectsock(const char *host, const char *portnum)
 {
-    struct hostent  *phe;   /* pointer to host information entry    */
-    struct sockaddr_in sin; /* an Internet endpoint address         */
-    int s;              	/* socket descriptor                    */
+    struct hostent  *phe;   // pointer to host information entry    
+    struct sockaddr_in sin; // an Internet endpoint address         
+    int s;              	// socket descriptor                    
 
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
 
-	/* Map port number (char string) to port number (int)*/
+	// Map port number (char string) to port number (int)
     if ((sin.sin_port=htons((unsigned short)atoi(portnum))) == 0)
     {
         printf("can't get \"%s\" port number\n", portnum);
     	return -1;
     }
 
-	/* Map host name to IP address, allowing for dotted decimal */
+	// Map host name to IP address, allowing for dotted decimal 
     if ((phe = gethostbyname(host)))
         memcpy(&sin.sin_addr, phe->h_addr, phe->h_length);
     else if ( (sin.sin_addr.s_addr = inet_addr(host)) == INADDR_NONE )
@@ -287,7 +287,7 @@ int connectsock(const char *host, const char *portnum)
     	return -1;
     }
 
-	/* Allocate a socket */
+	// Allocate a socket 
     s = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s < 0)
     {
@@ -295,7 +295,7 @@ int connectsock(const char *host, const char *portnum)
     	return -1;
     }
 
-	/* Connect the socket */
+	// Connect the socket 
     if (connect(s, (struct sockaddr *)&sin, sizeof(sin)) < 0)
     {
         printf("can't connect to %s.%s: %s\n", host, portnum,
@@ -303,7 +303,44 @@ int connectsock(const char *host, const char *portnum)
         return -1;
     }
     return s;
+}*/
+
+int connectsock(const char *URI)
+{
+
+    int sock;
+    int connectError; 
+
+    // ESTABLISH SOCKET
+    if((sock = socket(AF_INET, SOCK_STREAM, 0)) == ERROR){
+        perror("socket");
+        exit(-1);
+    }
+    // 
+    int status;
+	struct addrinfo hints;
+	struct addrinfo *servinfo;  // will point to the result
+
+	// INPUT STRUCT getadderinfo()
+	memset(&hints, 0, sizeof hints); // make sure the struct is empty
+	hints.ai_family = AF_INET;  	 // don't care IPv4 or IPv6
+	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
+	hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
+
+	if ((status = getaddrinfo(URI, "80", &hints, &servinfo)) != 0) 
+	{
+	    fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
+	    exit(1);
+	}
+
+	// CONNECT
+    connectError = connect(sock, servinfo->ai_addr, servinfo->ai_addrlen);
+
+    freeaddrinfo(servinfo); // free the linked-list
+
+    return sock; 
 }
+
 
 int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
 {
