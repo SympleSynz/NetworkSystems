@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <openssl/md5.h>
-#include <fcntl.h>
+#include <
 
 #define QLEN    32 
 #define BUFSIZE	4096
@@ -56,11 +56,6 @@ int main(int argc, char* argv[])
     char token1[300], token2[300], token3[300];
     char s[INET6_ADDRSTRLEN];
     char Request[BUFSIZE];
-
-    fd = shm_open("/mycache", O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
-
-    CacheMoney = mmap(NULL, sizeof *CacheMoney, PROT_READ | PROT_WRITE, 
-                    MAP_SHARED | MAP_ANONYMOUS, fd, 0);
 
     CacheMoney = calloc(100, sizeof(CacheMoney));
 

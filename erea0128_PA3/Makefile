@@ -1,7 +1,7 @@
 All: WebProxy
 
 WebProxy: WebProxy.c
-	gcc -Wall -o webproxy WebProxy.c 
+	gcc -Wall -o webproxy WebProxy.c -lrt
 
 .PHONY: clean
 
