@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <openssl/md5.h>
-#include <
+#include <pthread.h>
 
 #define QLEN    32 
 #define BUFSIZE	4096
@@ -37,27 +37,30 @@ struct Cache
 	time_t timestamp;
 	char *content;
 };
-void sigchld_handler(int s);
+
 void *get_in_addr(struct sockaddr *sa);
 int connectsock(const char *URI);
-int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version);
+void ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version);
+void *SendRequest(void *s);
 struct Cache *CacheMoney;
+/*pthread_mutex_t rlock;
+pthread_mutex_t slock;
+pthread_mutex_t clok;
+pthread_mutex_t threadLock;*/
+pthread_t ThreadCount;
+int timeout;
 
 int main(int argc, char* argv[])
 {
-	int client, new_fd, rv, bytes, length, timeout;  
+	int client, new_fd, rv;  
     struct addrinfo hints, *servinfo, *p;
     struct sockaddr_storage their_addr;
     socklen_t sin_size;
-    struct sigaction sa;
     int yes = 1;
-    int fd;
-    char *Method = NULL, *URI = NULL, *Version = NULL, *portnum = NULL;
-    char token1[300], token2[300], token3[300];
+    char *portnum = NULL;
     char s[INET6_ADDRSTRLEN];
-    char Request[BUFSIZE];
 
-    CacheMoney = calloc(100, sizeof(CacheMoney));
+    CacheMoney = calloc(1000, sizeof(CacheMoney));
 
     if (argc < 2)
     	portnum = "8080";
@@ -116,18 +119,15 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-	//Handling all the child processes
-    sa.sa_handler = sigchld_handler; // reap all dead processes
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) 
-    {
-        perror("\nsigaction");
-        exit(1);
-    }
     printf("\nserver port %s: waiting for connections...\n", portnum);
 
 	//Main accept() loop for webproxy
+/*    if (pthread_mutex_init(&rlock, NULL) != 0)
+        printf("\n Mutex init failed\n");
+    if (pthread_mutex_init(&slock, NULL) != 0)
+        printf("\n Mutex init failed\n");
+    if (pthread_mutex_init(&clok, NULL) != 0)
+        printf("\n Mutex init failed\n");*/
     while(1) 
     {  	
         sin_size = sizeof their_addr;
@@ -142,173 +142,14 @@ int main(int argc, char* argv[])
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
         printf("server port %s: got connection from %s\n", portnum, s);
-
-		//Start listening for content
-		if (fork() == 0) // We fork to allow the child process to complete the request
-        { 
-            (void) close(client); // child doesn't need to listen
-        	memset(Request, 0, BUFSIZE);
-        	bytes = read(new_fd, Request, BUFSIZE); //read in the client header into buf
-        	if (bytes == 0)
-        		break;
-		    if (bytes < 0)
-		    {
-		        ErrorHandle(0, 500, new_fd, Method, URI, Version);
-		        fputs("Error reading file", stderr);
-		        break;
-		    }
-		    
-		    sscanf(Request, "%s" "%s" "%s", token1, token2, token3); //Parse out the first line
-		    Method = token1;
-		    URI = token2;
-		    Version = token3;
-
-            if (Version != NULL) //Need to remove the return and newline characters to do a comparison for 400 error
-		    {   
-		        length = strlen(Version); 
-		        if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
-		            Version[length-1] = '\0';
-		    }
-			if (strcmp(Method,"GET") != 0)
-			{
-			 	ErrorHandle(1, 400, new_fd, Method, URI, Version);
-			 	break;
-			}
-			else if (strstr(URI, "[") || strstr(URI, "]"))
-			{
-			    ErrorHandle(2, 400, new_fd, Method, URI, Version);
-			    break;
-			}
-			else if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
-			{
-			    ErrorHandle(3, 400, new_fd, Method, URI, Version);
-			    break;
-			}
-			else
-			{
-				char *temp;
-				strcpy(token1,token2);
-				int flag = 0;
-			   	int i = 7;
-				while (i < strlen(token2)) //Getting the proper host URL
-				{
-					if (token2[i] == ':')
-					{
-						flag = 1;
-						break;
-					}
-					i++;
-				}
-		   
-				temp = strtok(token2,"//");
-				if (flag == 0)
-					temp = strtok(NULL,"/");
-				else
-					temp = strtok(NULL,":");
-		   
-				sprintf(token2,"%s",temp);
-				printf("host = %s",token2); //Removal of the http://, to only have the host name
-		   
-				if(flag == 1)
-					temp = strtok(NULL,"/");
-		   
-				strcat(token1, "^]"); //Setting up the rest of the path after the host name
-				temp = strtok(token1, "//");
-				temp = strtok(NULL, "/");
-				if(temp!=NULL)
-					temp=strtok(NULL, "^]");
-				printf("\npath = %s\n", temp);
-
-				//Check the cache
-				int index = 0;
-				while (CacheMoney[index].path != NULL)
-				{
-					if (index >= 100)
-						break;
-					if (strcmp(CacheMoney[index].path, temp) == 0)
-					{
-						printf("\nFOUND A MATCH\n");
-						double diff = 0.0;
-						time_t time1;
-					    time(&time1);
-					    diff = difftime(CacheMoney[index].timestamp, time1);
-					    if (diff <= timeout)
-					    {
-					    	CacheMoney[index].timestamp = time1;
-							send(new_fd, CacheMoney[index].content, CacheMoney[index].size, 0);
-							printf("\nFound in Cache. Connection %d closed for pid %d\n\n", new_fd, getpid());
-				            (void) close(new_fd); //Close the file descriptor for the child process
-				            exit(0);
-				        }
-				        else
-				        	break;
-					}
-					index++;
-				}
-
-				//If not in cache, connect to server and send request
-			    int fd = connectsock(URI);
-			    if (fd == -1)
-			    {
-			    	ErrorHandle(0, 500, new_fd, Method, URI, Version);
-			    	break;
-			    }
-
-			    memset(Request, 0, BUFSIZE);
-			    if (temp != NULL) //creating a new header to send
-			    	sprintf(Request,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n", temp, token3, token2);
-				else
-					sprintf(Request,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n", token3, token2);
-
-				bytes = send(fd, Request, strlen(Request), 0);
-
-				if (bytes < 0)
-				{
-					ErrorHandle(0, 500, new_fd, Method, URI, Version);
-			        fputs("Error Sending Request", stderr);
-			        break;
-			    }
-			    else
-			    {
-			    	do
-					{
-						memset(Request, 0, BUFSIZE);
-						bytes = read(fd, Request, BUFSIZE);
-						if (index < 100)
-						{
-							while (CacheMoney[index].path != NULL)
-								index++;
-							if ((strstr(temp, ".PNG") || strstr(temp, ".png") || strstr(temp, ".JPEG") || strstr(temp, ".jpeg")))
-							{
-								CacheMoney[index].path = temp;
-								CacheMoney[index].size = bytes;
-								time(&CacheMoney[index].timestamp);
-								CacheMoney[index].content = calloc(bytes, 1);
-								memcpy(CacheMoney[index].content, Request, bytes);
-							}
-						}
-						else
-							printf("Cache is full index: %d\n", index);
-						if (!(bytes <= 0))
-							send(new_fd, Request, bytes, 0);
-					}while (bytes > 0);
-			    }
-			}
-            printf("Connection %d closed for pid %d\n", new_fd, getpid());
-            (void) close(new_fd); //Close the file descriptor for the child process
-            exit(0);
+        printf("new_fd: %d\n", new_fd);
+        if(pthread_create(&ThreadCount, NULL, &SendRequest,(void*) &new_fd)) 
+        {
+            fprintf(stderr, "Error creating thread\n");
+            return 1;
         }
-        (void) close(new_fd);  // parent doesn't need this
     }
     return 0;
-}
-
-void sigchld_handler(int s)
-{
-    // waitpid() might overwrite errno, so we save and restore it:
-    int saved_errno = errno;
-    while(waitpid(-1, NULL, WNOHANG) > 0);
-    errno = saved_errno;
 }
 
 void *get_in_addr(struct sockaddr *sa)
@@ -357,7 +198,7 @@ int connectsock(const char *URI)
     return sock; 
 }
 
-int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
+void ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
 {
     char error[BUFSIZE];
     char errorMsg[BUFSIZE];
@@ -411,5 +252,206 @@ int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
     error[strlen(error)] = '\n';
     send(fd, error, strlen(error), 0);
     send(fd, errorMsg, strlen(errorMsg), 0);
-    return 0;
+    return;
+}
+
+void *SendRequest(void *s)
+{ 
+    int new_fd = *(int *)s;
+    char Request[BUFSIZE];
+    char *Method = NULL, *URI = NULL, *Version = NULL;
+    char token1[300], token2[300], token3[300];
+    int length, bytes;
+
+    memset(Request, 0, BUFSIZE);
+
+    //pthread_mutex_lock(&rlock);
+    bytes = read(new_fd, Request, BUFSIZE); //read in the client header into buf
+    //pthread_mutex_unlock(&rlock);
+    if (bytes == 0)
+    {
+        (void) close(new_fd); //Close the file descriptor for the child process
+        //pthread_mutex_unlock(&threadLock);
+        pthread_exit(NULL);
+    }
+    if (bytes < 0)
+    {
+        //pthread_mutex_lock(&slock);
+        ErrorHandle(0, 500, new_fd, Method, URI, Version);
+        fputs("Error reading header\n", stderr);
+        (void) close(new_fd); //Close the file descriptor for the child process
+        //pthread_mutex_unlock(&slock);
+        //pthread_mutex_unlock(&threadLock);
+        pthread_exit(NULL);
+    }
+
+    sscanf(Request, "%s" "%s" "%s", token1, token2, token3); //Parse out the first line
+    Method = token1;
+    URI = token2;
+    Version = token3;
+
+    if (Version != NULL) //Need to remove the return and newline characters to do a comparison for 400 error
+    {   
+        length = strlen(Version); 
+        if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
+            Version[length-1] = '\0';
+    }
+    if (strcmp(Method,"GET") != 0)
+    {
+        //pthread_mutex_lock(&slock);
+        ErrorHandle(1, 400, new_fd, Method, URI, Version);
+        //pthread_mutex_unlock(&slock);
+        (void) close(new_fd); //Close the file descriptor for the child process
+        //pthread_mutex_unlock(&threadLock);
+        pthread_exit(NULL);
+    }
+    if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
+    {
+        //pthread_mutex_lock(&slock);
+        ErrorHandle(3, 400, new_fd, Method, URI, Version);
+        //pthread_mutex_unlock(&slock);
+        (void) close(new_fd); //Close the file descriptor for the child process
+        //pthread_mutex_unlock(&threadLock);
+        pthread_exit(NULL);
+    }
+
+    char *temp;
+    strcpy(token1,token2);
+    int flag = 0;
+    int i = 7;
+    while (i < strlen(token2)) //Getting the proper host URL
+    {
+        if (token2[i] == ':')
+        {
+            flag = 1;
+            break;
+        }
+        i++;
+    }
+
+    temp = strtok(token2,"//");
+    if (flag == 0)
+        temp = strtok(NULL,"/");
+    else
+        temp = strtok(NULL,":");
+
+    sprintf(token2,"%s",temp);
+    printf("host = %s",token2); //Removal of the http://, to only have the host name
+
+    if(flag == 1)
+        temp = strtok(NULL,"/");
+
+    strcat(token1, "^]"); //Setting up the rest of the path after the host name
+    temp = strtok(token1, "//");
+    temp = strtok(NULL, "/");
+    if(temp!=NULL)
+        temp=strtok(NULL, "^]");
+    printf("\npath = %s\n", temp);
+
+    //Check the cache
+    int index = 0;
+    int found = 0;
+    //pthread_mutex_lock(&clok);
+    while (CacheMoney[index].path != NULL)
+    {
+        if (index >= 1000)
+        {
+            printf("\nNot found in Cache. Cache Full\n");
+            break;
+        }
+        if (strcmp(CacheMoney[index].path, temp) == 0)
+        {
+            printf("\nFOUND A MATCH\n");
+            double diff = 0.0;
+            time_t time1;
+            time(&time1);
+            diff = difftime(CacheMoney[index].timestamp, time1);
+            if (diff <= timeout)
+            {
+                CacheMoney[index].timestamp = time1;
+                found = 1;
+            }
+            else
+                break;
+        }
+        index++;
+    }
+    //pthread_mutex_unlock(&clok);
+    
+    if (found == 1)
+    {
+        //pthread_mutex_lock(&slock);
+        send(new_fd, CacheMoney[index].content, CacheMoney[index].size, 0);
+        //pthread_mutex_lock(&slock);
+        printf("\nFound in Cache. Connection %d closed\n\n", new_fd);
+        (void) close(new_fd); //Close the file descriptor for the child process
+        //pthread_mutex_unlock(&threadLock);
+        pthread_exit(NULL);
+    }
+
+    //If not in cache, connect to server and send request
+    int fd = connectsock(URI);
+    printf("fd: %d\n", fd);
+    if (fd == -1)
+    {
+        //pthread_mutex_lock(&slock);
+        ErrorHandle(0, 500, new_fd, Method, URI, Version);
+        //pthread_mutex_lock(&slock);
+        (void) close(new_fd); //Close the file descriptor for the child process
+        //pthread_mutex_unlock(&threadLock);
+        pthread_exit(NULL);;
+    }
+
+    memset(Request, 0, BUFSIZE);
+    if (temp != NULL) //creating a new header to send
+        sprintf(Request,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n", temp, token3, token2);
+    else
+        sprintf(Request,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n", token3, token2);
+
+    //pthread_mutex_lock(&slock);
+    bytes = send(fd, Request, strlen(Request), 0);
+    //pthread_mutex_unlock(&slock);
+
+    if (bytes < 0)
+    {
+        //pthread_mutex_lock(&slock);
+        ErrorHandle(0, 500, new_fd, Method, URI, Version);
+        //pthread_mutex_lock(&slock);
+        fputs("Error Sending Request", stderr);
+        (void) close(new_fd); //Close the file descriptor for the child process
+        //pthread_mutex_unlock(&threadLock);
+        pthread_exit(NULL);
+    }
+    else
+    {
+        do
+        {
+            memset(Request, 0, BUFSIZE);
+            //pthread_mutex_lock(&rlock);
+            bytes = read(fd, Request, BUFSIZE);
+            //pthread_mutex_unlock(&rlock);
+            if (index < 1000)
+            {
+                //pthread_mutex_lock(&clok);
+                while (CacheMoney[index].path != NULL)
+                    index++;
+                CacheMoney[index].path = temp;
+                CacheMoney[index].size = bytes;
+                time(&CacheMoney[index].timestamp);
+                CacheMoney[index].content = calloc(bytes, 1);
+                memcpy(CacheMoney[index].content, Request, bytes);
+                //pthread_mutex_unlock(&clok);
+            }
+            else
+                printf("Cache is full index: %d\n", index);
+            //pthread_mutex_lock(&slock);
+            if (!(bytes <= 0))
+                send(new_fd, Request, bytes, 0);
+            //pthread_mutex_unlock(&slock);
+        }while (bytes > 0);
+    }
+    printf("Connection %d closed\n", new_fd);
+    (void) close(new_fd); //Close the file descriptor for the child process
+    //pthread_mutex_unlock(&threadLock);
+    pthread_exit(NULL);
 }
