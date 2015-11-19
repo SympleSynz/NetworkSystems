@@ -25,9 +25,6 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <time.h>
-#include <openssl/md5.h>
-#include <fcntl.h>
-#include <pthread.h>
 
 #define QLEN    32 
 #define BUFSIZE	4096
@@ -37,8 +34,6 @@ void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
 int connectsock(const char *URI);
 int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version);
-unsigned char *HashIt(const char Request[BUFSIZE], int bytes);
-//struct Cache *CacheMoney;
 
 int main(int argc, char* argv[])
 {
@@ -53,47 +48,6 @@ int main(int argc, char* argv[])
     char token1[300], token2[300], token3[300];
     char s[INET6_ADDRSTRLEN];
     char Request[BUFSIZE];
-    /*pthread_mutex_t* threadLock;
-    int des_mutex;
-
-    des_mutex = shm_open("/mutex_lock", O_CREAT | O_RDWR | O_TRUNC, S_IRWXU | S_IRWXG);
-
-    if (des_mutex < 0) 
-    	perror("failure on shm_open on des_mutex");
-    
-    if(ftruncate(des_mutex, sizeof(pthread_mutex_t)) == -1)
-    	fprintf(stderr, "ftruncate: %s\n", strerror(errno));
-
-    threadLock = (pthread_mutex_t*) mmap(NULL, sizeof(pthread_mutex_t), PROT_READ | PROT_WRITE, MAP_SHARED, des_mutex, 0);
-
-    if (threadLock == MAP_FAILED ) 
-    	perror("Error on mmap on mutex\n");
-
-    pthread_mutexattr_t mutexAttr;
-	pthread_mutexattr_setpshared(&mutexAttr, PTHREAD_PROCESS_SHARED);
-	pthread_mutex_init(threadLock, &mutexAttr);
-
-    CacheMoney = calloc(50, sizeof(CacheMoney));
-    int check = 0;
-    while (check < 50)
-    {
-    	CacheMoney[check].path = calloc(BUFSIZE, 1);
-    	check++;
-    }
-
-    fd = shm_open("/CacheMoney", O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
-
-    if (fd < 0) 
-    	perror("failure on shm_open on des_mutex");
-
-    if(ftruncate(fd, sizeof *CacheMoney) == -1)
-        fprintf(stderr, "ftruncate: %s\n", strerror(errno));
-
-    CacheMoney = mmap(NULL, sizeof *CacheMoney, PROT_READ | PROT_WRITE, 
-                    MAP_SHARED | MAP_ANONYMOUS, fd, 0);
-
-    if (CacheMoney == MAP_FAILED ) 
-    	perror("Error on mmap on mutex\n");*/
 
     if (argc < 2)
     	portnum = "8080";
@@ -465,14 +419,4 @@ int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
     send(fd, error, strlen(error), 0);
     send(fd, errorMsg, strlen(errorMsg), 0);
     return 0;
-}
-
-unsigned char *HashIt(const char Request[BUFSIZE], int bytes)
-{
-	unsigned char *hash = calloc(MD5_DIGEST_LENGTH, 1);
-	MD5_CTX mdContext;
-	MD5_Init (&mdContext);
-    MD5_Update (&mdContext, Request, bytes);    
-    MD5_Final (hash,&mdContext);
-	return hash;
 }
