@@ -1,3 +1,5 @@
+#define __USE_XOPEN
+#define _GNU_SOURCE
 #include <errno.h>
 #include <arpa/inet.h>
 #include <signal.h>
@@ -31,34 +33,27 @@
 #define BUFSIZE	4096
 
 extern int  errno;
-struct Cache
-{
-	char *path;
-	int size;
-	time_t timestamp;
-	char content[20];
-};
 void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
 int connectsock(const char *URI);
 int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version);
 unsigned char *HashIt(const char Request[BUFSIZE], int bytes);
-struct Cache *CacheMoney;
+//struct Cache *CacheMoney;
 
 int main(int argc, char* argv[])
 {
-	int client, new_fd, rv, bytes, length, timeout;  
+	int client, new_fd, rv, bytes, length;
+	float timeout;  
     struct addrinfo hints, *servinfo, *p;
     struct sockaddr_storage their_addr;
     socklen_t sin_size;
     struct sigaction sa;
     int yes = 1;
-    int fd;
     char *Method = NULL, *URI = NULL, *Version = NULL, *portnum = NULL;
     char token1[300], token2[300], token3[300];
     char s[INET6_ADDRSTRLEN];
     char Request[BUFSIZE];
-    pthread_mutex_t* threadLock;
+    /*pthread_mutex_t* threadLock;
     int des_mutex;
 
     des_mutex = shm_open("/mutex_lock", O_CREAT | O_RDWR | O_TRUNC, S_IRWXU | S_IRWXG);
@@ -98,7 +93,7 @@ int main(int argc, char* argv[])
                     MAP_SHARED | MAP_ANONYMOUS, fd, 0);
 
     if (CacheMoney == MAP_FAILED ) 
-    	perror("Error on mmap on mutex\n");
+    	perror("Error on mmap on mutex\n");*/
 
     if (argc < 2)
     	portnum = "8080";
@@ -262,7 +257,43 @@ int main(int argc, char* argv[])
 				printf("\npath = %s\n", temp);
 
 				//Check the cache
-				
+				unsigned char* HashName;
+				if (temp != NULL)
+					HashName = HashIt(temp, strlen(temp));
+				else
+					HashName = HashIt("/", 1);
+
+				FILE *CacheMoney = fopen((char*)HashName, "rb");
+				if (CacheMoney != NULL)
+				{
+					struct stat st;
+					stat((char*)HashName, &st);
+					int size = st.st_size;
+					printf("The size: %d\n", size);
+					char* content = calloc(st.st_size, 1);
+					fread(content, 1, st.st_size, CacheMoney);
+					char timestamp[25];
+					memcpy(timestamp, content, 25);
+					fclose(CacheMoney);
+					struct tm timeInfo;
+					strptime(timestamp, "%a %b %d %H:%M:%S %Y", &timeInfo);
+					time_t TimeIsMoney = mktime(&timeInfo);
+					time_t currentTime = time(NULL);
+					
+					float diff = difftime(currentTime, TimeIsMoney);
+					printf("diff: %f\n", diff);
+					if (diff <= timeout)
+					{printf("Okay?\n");
+						int otherSize = st.st_size - 25;
+						char* OtherContent = calloc(otherSize, 1);
+						content += 25;
+						OtherContent = content;
+						send(new_fd, OtherContent, otherSize, 0);
+						printf("Connection %d closed for pid %d\n", new_fd, getpid());
+			            (void) close(new_fd); //Close the file descriptor for the child process
+			            exit(0);
+					}
+				}
 
 				//If not in cache, connect to server and send request
 			    int fd = connectsock(URI);
@@ -273,11 +304,11 @@ int main(int argc, char* argv[])
 			    }
 
 			    memset(Request, 0, BUFSIZE);
+
 			    if (temp != NULL) //creating a new header to send
 			    	sprintf(Request,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n", temp, token3, token2);
 				else
 					sprintf(Request,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n", token3, token2);
-
 				bytes = send(fd, Request, strlen(Request), 0);
 
 				if (bytes < 0)
@@ -288,13 +319,22 @@ int main(int argc, char* argv[])
 			    }
 			    else
 			    {
+					time_t timestamp = time(NULL);
+					char *currentTime = ctime(&timestamp);
+					FILE *fp = fopen((char*)HashName, "wb");
+					if (fp != NULL)
+						fprintf(fp, "%s", currentTime);
 			    	do
 					{
 						memset(Request, 0, BUFSIZE);
 						bytes = read(fd, Request, BUFSIZE);
 						if (!(bytes <= 0))
+						{
 							send(new_fd, Request, bytes, 0);
+							fwrite(Request, sizeof(char), bytes, fp);
+						}
 					}while (bytes > 0);
+					fclose(fp);
 			    }
 			}
             printf("Connection %d closed for pid %d\n", new_fd, getpid());
@@ -422,8 +462,7 @@ unsigned char *HashIt(const char Request[BUFSIZE], int bytes)
 	unsigned char *hash = calloc(MD5_DIGEST_LENGTH, 1);
 	MD5_CTX mdContext;
 	MD5_Init (&mdContext);
-    MD5_Update (&mdContext, Request, bytes);
-    
+    MD5_Update (&mdContext, Request, bytes);    
     MD5_Final (hash,&mdContext);
 	return hash;
 }
