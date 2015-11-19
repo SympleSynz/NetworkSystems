@@ -255,21 +255,35 @@ int main(int argc, char* argv[])
 				if(temp!=NULL)
 					temp=strtok(NULL, "^]");
 				printf("\npath = %s\n", temp);
+				
+				char PathName[BUFSIZE];
+				char *temp2;
+				if(strstr(temp, "."))
+				{
+					
+					memcpy(PathName, temp, strlen(temp));
+					temp2 = strtok(PathName, "/");
+					while (temp2 != NULL)
+					{
+						if (strstr(temp2, "."))
+							break;
+						temp2 = strtok(NULL, "/");
+					}
+				}
 
 				//Check the cache
-				unsigned char* HashName;
-				if (temp != NULL)
-					HashName = HashIt(temp, strlen(temp));
+				char* HashName;
+				if (strstr(temp, "."))
+					HashName = temp2;
+					//HashName = HashIt(temp, strlen(temp));
 				else
-					HashName = HashIt("/", 1);
+					HashName = "index";
 
 				FILE *CacheMoney = fopen((char*)HashName, "rb");
 				if (CacheMoney != NULL)
 				{
 					struct stat st;
 					stat((char*)HashName, &st);
-					int size = st.st_size;
-					printf("The size: %d\n", size);
 					char* content = calloc(st.st_size, 1);
 					fread(content, 1, st.st_size, CacheMoney);
 					char timestamp[25];
@@ -281,9 +295,8 @@ int main(int argc, char* argv[])
 					time_t currentTime = time(NULL);
 					
 					float diff = difftime(currentTime, TimeIsMoney);
-					printf("diff: %f\n", diff);
 					if (diff <= timeout)
-					{printf("Okay?\n");
+					{
 						int otherSize = st.st_size - 25;
 						char* OtherContent = calloc(otherSize, 1);
 						content += 25;
@@ -321,17 +334,17 @@ int main(int argc, char* argv[])
 			    {
 					time_t timestamp = time(NULL);
 					char *currentTime = ctime(&timestamp);
-					FILE *fp = fopen((char*)HashName, "wb");
+					FILE *fp = fopen(HashName, "w+");
 					if (fp != NULL)
 						fprintf(fp, "%s", currentTime);
 			    	do
 					{
 						memset(Request, 0, BUFSIZE);
-						bytes = read(fd, Request, BUFSIZE);
+						bytes = recv(fd, Request, BUFSIZE, 0);
 						if (!(bytes <= 0))
 						{
 							send(new_fd, Request, bytes, 0);
-							fwrite(Request, sizeof(char), bytes, fp);
+							fwrite(Request, 1, bytes, fp);
 						}
 					}while (bytes > 0);
 					fclose(fp);
@@ -431,17 +444,14 @@ int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
         memcpy(error + strlen(error), URI, strlen(URI));
     }
     else if (code == 500)
-    {
-        memcpy(error, "HTTP/1.1 500 Internal Server Error", 33);
-        memcpy(errorMsg, error, strlen(error));
-    }
+        memcpy(error, "HTTP/1.1 500 Internal Server Error", 34);
     else
     {
         memcpy(error, "HTTP/1.1 501 Not Implemented: ", 30);
         memcpy(error + strlen(error), URI, strlen(URI));
     }
     memcpy(errorMsg, "<html><em> ", 11);
-    memcpy(errorMsg + strlen(errorMsg), error, strlen(error));
+    memcpy(errorMsg + 11, error, strlen(error));
     memcpy(errorMsg + strlen(errorMsg), " </em></html>", 13);
     sprintf(length, "%ld", strlen(errorMsg));
     
