@@ -115,6 +115,7 @@ int main(int argc, char* argv[])
 		if (!fork()) 
         { 
         	//Child doesn't need to listen
+<<<<<<< HEAD
             (void) close(client);
             //do{
 	            /*struct pollfd ufds[1]; //This struct is used for the poll() for timing
