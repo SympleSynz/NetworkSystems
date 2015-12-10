@@ -9,5 +9,9 @@ user@cu-cs-vm:~/erea0128_PA4$ make
 To clean up the executable, type "make clean" into the terminal.
 user@cu-cs-vm:~/erea0128_PA4$ make clean
 
+#Running
+To run the program, you must use "sudo" in order to use the system commands to insert into the ip tables
+user@cu-cs-vm:~/erea0128_PA4$ sudo ./Proxy
+
 #Project Description
 Creating a webproxy to work with a client VM and server VM. I will be running echo-client on the client VM and echo-server on the server VM. The client VM will send a message to the server VM through the webproxy and vice versa. The webproxy will act as a man in the middle between the client and server.

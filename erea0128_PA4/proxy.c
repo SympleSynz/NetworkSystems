@@ -1,30 +1,27 @@
-#define __USE_XOPEN
-#define _GNU_SOURCE
 #include <errno.h>
 #include <arpa/inet.h>
 #include <signal.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <sys/errno.h>
 #include <sys/stat.h>
-#include <sys/poll.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
 #include <dirent.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <time.h>
 
 #include <stdarg.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdbool.h>
-#include <time.h>
 
 #define QLEN    32 
 #define BUFSIZE	4096
@@ -33,78 +30,44 @@ extern int  errno;
 void sigchld_handler(int s);
 void *get_in_addr(struct sockaddr *sa);
 int connectsock(const char *URI);
-int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version);
 
 int main(int argc, char* argv[])
 {
-	int client, new_fd, rv, bytes, length;
-	float timeout;  
-    struct addrinfo hints, *servinfo, *p;
+	int client, new_fd, bytes;  
+    struct sockaddr_in c_hints;
     struct sockaddr_storage their_addr;
     socklen_t sin_size;
     struct sigaction sa;
-    int yes = 1;
-    char *Method = NULL, *URI = NULL, *Version = NULL, *portnum = NULL;
-    char token1[300], token2[300], token3[300];
+    char *portnum = NULL;
     char s[INET6_ADDRSTRLEN];
-    char Request[BUFSIZE];
+    char DnatRules[BUFSIZE];
 
-    if (argc < 2)
-    	portnum = "8080";
-    else
-    	portnum = argv[1];
-    if (argc == 3)
-    	timeout = atof(argv[2]);
-    else
-    	timeout = 5.0;
-
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; // use my IP
-
-	//DFS binding to socket
-    if ((rv = getaddrinfo(NULL, portnum, &hints, &servinfo)) != 0) //Attempting to bind to portnum
+   	portnum = "8080";
+   	//Open up a socket for listening
+	if ((client = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
-        fprintf(stderr, "\ngetaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
+    	perror("\nserver: socket");
+    	exit(-1);
     }
-	// loop through all the results and bind to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) 
-    {
-        if ((client = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
-            perror("\nserver: socket");
-            continue;
-        }
+    //Setting the default values for client's addr info
+    c_hints.sin_family = AF_INET;
+	c_hints.sin_port = htons(atoi(portnum));
+	c_hints.sin_addr.s_addr = INADDR_ANY; 
+	bzero(&c_hints.sin_zero, 8);
 
-        if (setsockopt(client, SOL_SOCKET, SO_REUSEADDR, &yes,
-                sizeof(int)) == -1) {
-            perror("\nsetsockopt");
-            exit(1);
-        }
-
-        if (bind(client, p->ai_addr, p->ai_addrlen) == -1) {
-            close(client);
-            perror("\nserver: bind");
-            continue;
-        }
-
-        break;
-    }
-
-    freeaddrinfo(servinfo); // all done with this structure
-    if (p == NULL)  
-    {
-        fprintf(stderr, "\nserver: failed to bind\n");
-        exit(1);
-    }
-
-    if (listen(client, QLEN) == -1) 
-    {
-        perror("\nlisten");
-        exit(1);
-    }
+	//Bind to the socket indicated above
+	sin_size = sizeof their_addr;
+	if((bind(client, (struct sockaddr *) &c_hints, sin_size)) == -1)
+	{
+		perror("bind: ");
+		exit(-1);
+	}
+	//Start listening on the port number
+	if((listen(client, 10)) == -1)
+	{
+		perror("listen: ");
+		exit(-1);
+	}
 
 	//Handling all the child processes
     sa.sa_handler = sigchld_handler; // reap all dead processes
@@ -115,197 +78,168 @@ int main(int argc, char* argv[])
         perror("\nsigaction");
         exit(1);
     }
-    printf("\nserver port %s: waiting for connections...\n", portnum);
 
-	//Main accept() loop for webproxy
+    int fd;
+	struct ifreq ifr;
+	//This grabs the information from ifconfig for eth1, in order to write the DNAT rule
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	ifr.ifr_addr.sa_family = AF_INET;
+	strncpy(ifr.ifr_name, "eth1", IFNAMSIZ-1);
+	ioctl(fd, SIOCGIFADDR, &ifr);
+	close(fd);
+
+	//Writing out the DNAT rule
+    sprintf(DnatRules, "iptables -t nat -A PREROUTING -p tcp -i eth1 -j DNAT --to %s:%d", inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr), ntohs(c_hints.sin_port));
+    printf("DNAT RULES: %s\n", DnatRules);
+    system(DnatRules);
+    printf("\nserver port %d: waiting for connections...\n", ntohs(c_hints.sin_port));
+
+	//Main accept() loop for Proxy
     while(1) 
     {  	
         sin_size = sizeof their_addr;
-        new_fd = accept(client, (struct sockaddr *)&their_addr, &sin_size); //listening for a client
+        //listening for a client
+        new_fd = accept(client, (struct sockaddr *)&their_addr, &sin_size); 
         if (new_fd == -1) 
         {
             perror("accept");
             continue;
         }
-
-        inet_ntop(their_addr.ss_family, //tells us if we got a connection
+        //Tells if got a connection
+        inet_ntop(their_addr.ss_family, 
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
         printf("server port %s: got connection from %s\n", portnum, s);
 
-		//Start listening for content
-
-		if (!fork()) // We fork to allow the child process to complete the request
+        //Fork to allow the child process to complete the request
+		if (!fork()) 
         { 
-            (void) close(client); // child doesn't need to listen
-        	memset(Request, 0, BUFSIZE);
-        	bytes = read(new_fd, Request, BUFSIZE); //read in the client header into buf
-        	if (bytes == 0)
-        		break;
-		    if (bytes < 0)
-		    {
-		        ErrorHandle(0, 500, new_fd, Method, URI, Version);
-		        fputs("Error reading file", stderr);
-		        break;
-		    }
-		    
-		    sscanf(Request, "%s" "%s" "%s", token1, token2, token3); //Parse out the first line
-		    Method = token1;
-		    URI = token2;
-		    Version = token3;
+        	//Child doesn't need to listen
+            (void) close(client);
+            //do{
+	            /*struct pollfd ufds[1]; //This struct is used for the poll() for timing
+	            ufds[0].fd = new_fd;
+	            ufds[0].events = POLLIN;
+	            pollRtn = poll(ufds, 1, 1000);*/ 
+			    int server;
+			    //Need all these to bind to a dynamically chosen port as well as
+			    //get the information necessary for SNAT rules
+			    struct sockaddr_in s_hints;
+			    struct sockaddr_in server_addr;
+			    struct sockaddr_in p_addr;
+			    struct sockaddr_in d_addr;
+				socklen_t s_addrlen; 
+				socklen_t p_addrlen; 
+				socklen_t d_addrlen; 
+				s_addrlen = sizeof(struct sockaddr_in);
+				p_addrlen = sizeof(struct sockaddr_in);			
+				d_addrlen = sizeof(struct sockaddr_in);
 
-            if (Version != NULL) //Need to remove the return and newline characters to do a comparison for 400 error
-		    {   
-		        length = strlen(Version); 
-		        if (Version[length-1] == ' ' || Version[length-1] == '\n' || Version[length-1] == '\r')
-		            Version[length-1] = '\0';
-		    }
-			if (strcmp(Method,"GET") != 0)
-			{
-			 	ErrorHandle(1, 400, new_fd, Method, URI, Version);
-			 	break;
-			}
-			else if (strstr(URI, "[") || strstr(URI, "]"))
-			{
-			    ErrorHandle(2, 400, new_fd, Method, URI, Version);
-			    break;
-			}
-			else if (strcmp(Version, "HTTP/1.0\0") != 0 && strcmp(Version, "HTTP/1.1\0") != 0)
-			{
-			    ErrorHandle(3, 400, new_fd, Method, URI, Version);
-			    break;
-			}
-			else
-			{
-				char *temp;
-				strcpy(token1,token2);
-				int flag = 0;
-			   	int i = 7;
-				while (i < strlen(token2)) //Getting the proper host URL
-				{
-					if (token2[i] == ':')
-					{
-						flag = 1;
-						break;
-					}
-					i++;
-				}
-		   
-				temp = strtok(token2,"//");
-				if (flag == 0)
-					temp = strtok(NULL,"/");
-				else
-					temp = strtok(NULL,":");
-		   
-				sprintf(token2,"%s",temp);
-				printf("host = %s",token2); //Removal of the http://, to only have the host name
-		   
-				if(flag == 1)
-					temp = strtok(NULL,"/");
-		   
-				strcat(token1, "^]"); //Setting up the rest of the path after the host name
-				temp = strtok(token1, "//");
-				temp = strtok(NULL, "/");
-				if(temp!=NULL)
-					temp=strtok(NULL, "^]");
-				printf("\npath = %s\n", temp);
-				
-				char PathName[BUFSIZE];
-				char *temp2;
-				if(strstr(temp, "."))
-				{
-					
-					memcpy(PathName, temp, strlen(temp));
-					temp2 = strtok(PathName, "/");
-					while (temp2 != NULL)
-					{
-						if (strstr(temp2, "."))
-							break;
-						temp2 = strtok(NULL, "/");
-					}
-				}
-
-				//Check the cache
-				char* HashName;
-				if (strstr(temp, "."))
-					HashName = temp2;
-					//HashName = HashIt(temp, strlen(temp));
-				else
-					HashName = "index";
-
-				FILE *CacheMoney = fopen((char*)HashName, "rb");
-				if (CacheMoney != NULL)
-				{
-					struct stat st;
-					stat((char*)HashName, &st);
-					char* content = calloc(st.st_size, 1);
-					fread(content, 1, st.st_size, CacheMoney);
-					char timestamp[25];
-					memcpy(timestamp, content, 25);
-					fclose(CacheMoney);
-					struct tm timeInfo;
-					strptime(timestamp, "%a %b %d %H:%M:%S %Y", &timeInfo);
-					time_t TimeIsMoney = mktime(&timeInfo);
-					time_t currentTime = time(NULL);
-					
-					float diff = difftime(currentTime, TimeIsMoney);
-					if (diff <= timeout)
-					{
-						int otherSize = st.st_size - 25;
-						char* OtherContent = calloc(otherSize, 1);
-						content += 25;
-						OtherContent = content;
-						send(new_fd, OtherContent, otherSize, 0);
-						printf("Connection %d closed for pid %d\n", new_fd, getpid());
-			            (void) close(new_fd); //Close the file descriptor for the child process
-			            exit(0);
-					}
-				}
-
-				//If not in cache, connect to server and send request
-			    int fd = connectsock(URI);
-			    if (fd == -1)
+				//Same as above, open a socket for binding
+			    if ((server = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 			    {
-			    	ErrorHandle(0, 500, new_fd, Method, URI, Version);
+			    	perror("\nserver: socket");
+			    	exit(-1);
+			    }
+			    //Set the default values for the server addr info
+			    s_hints.sin_family = AF_INET;
+				s_hints.sin_port = 0;
+				s_hints.sin_addr.s_addr = INADDR_ANY; 
+				bzero(&s_hints.sin_zero, 8);
+
+				sin_size = sizeof their_addr;
+				//Bind to a port (any open port since the port is set to 0)
+				if((bind(server, (struct sockaddr *) &s_hints, sin_size)) == -1)
+				{
+					perror("bind: ");
+					exit(-1);
+				}
+				//Need information for SNAT rules, getting the server info
+				if((getsockname(server, (struct sockaddr *) &server_addr, &s_addrlen)) == -1){
+					perror("getsockname: ");
+					exit(-1);		
+				}
+				//Need information for SNAT rules, getting the client info
+				if((getpeername(new_fd, (struct sockaddr *) &p_addr, &p_addrlen)) == -1){
+					perror("getpeername: ");
+					exit(-1);		
+				}
+				//Need information for SNAT rules, getting the original destination (in write up)
+				if((getsockopt(new_fd, SOL_IP, 80, (struct sockaddr *) &d_addr, &d_addrlen)) == -1){
+					perror("getsockopt: ");
+					exit(-1);
+				}
+				//Write out the SNAT rule to the ip table
+			    char SnatRules[BUFSIZE];
+			    sprintf(SnatRules, "iptables -t nat -A POSTROUTING -p tcp -j SNAT --sport %d --to-source %s", ntohs(server_addr.sin_port), inet_ntoa(p_addr.sin_addr));
+			    printf("%s\n", SnatRules);	
+			    system(SnatRules);
+
+			    int server_fd;
+			    //Finally, connect to the server
+			  	server_fd = connect(server, (struct sockaddr *) &d_addr, d_addrlen);
+			    if (server_fd == -1)
 			    	break;
-			    }
+			    //For the log file, start getting the information in to a single string
+			    char *logfile;
+			    char logs[BUFSIZE];
+			    time_t currentTime;
+			    currentTime = time(NULL);
+			    //Getting the date and time
+	        	logfile = ctime(&currentTime);
+	        	//Replacing the new line character
+	        	logfile[strlen(logfile)-1] = ' ';
+	        	//Add the client's IP address to the logfile
+	        	strcat(logfile, inet_ntoa(p_addr.sin_addr));
+	        	//Convert the client's port number to a string
+	        	sprintf(logs, " %d ", ntohs(p_addr.sin_port));
+	        	strcat(logfile, logs);
+	        	//Add the server's IP address to the logfile
+	        	strcat(logfile, inet_ntoa(d_addr.sin_addr));
+	        	memset(logs, 0, BUFSIZE);
+	        	//Convert the server's port number to a string
+	        	sprintf(logs, " %d ", ntohs(d_addr.sin_port));
+	        	strcat(logfile, logs);
 
-			    memset(Request, 0, BUFSIZE);
+			    char Request[BUFSIZE];
+				memset(Request, 0, BUFSIZE);
+				//Read in from the client
+				bytes = read(new_fd, Request, BUFSIZE);
+				char byteSize[BUFSIZE];
+				//Bytes sent from client
+				if (!(bytes <= 0))
+					//Send request to server
+					bytes = send(server, Request, strlen(Request), 0);
 
-			    if (temp != NULL) //creating a new header to send
-			    	sprintf(Request,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n", temp, token3, token2);
-				else
-					sprintf(Request,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n", token3, token2);
-				bytes = send(fd, Request, strlen(Request), 0);
+				sprintf(byteSize, "%d ", bytes);
+				strcat(logfile, byteSize);
 
-				if (bytes < 0)
-				{
-					ErrorHandle(0, 500, new_fd, Method, URI, Version);
-			        fputs("Error Sending Request", stderr);
-			        break;
-			    }
-			    else
-			    {
-					time_t timestamp = time(NULL);
-					char *currentTime = ctime(&timestamp);
-					FILE *fp = fopen(HashName, "w+");
-					if (fp != NULL)
-						fprintf(fp, "%s", currentTime);
-			    	do
-					{
-						memset(Request, 0, BUFSIZE);
-						bytes = recv(fd, Request, BUFSIZE, 0);
-						if (!(bytes <= 0))
-						{
-							send(new_fd, Request, bytes, 0);
-							fwrite(Request, 1, bytes, fp);
-						}
-					}while (bytes > 0);
-					fclose(fp);
-			    }
-			}
-            printf("Connection %d closed for pid %d\n", new_fd, getpid());
-            (void) close(new_fd); //Close the file descriptor for the child process
+				memset(byteSize, 0, BUFSIZE);
+				memset(Request, 0, BUFSIZE);
+	    		//Read in from the server
+				bytes = read(server, Request, BUFSIZE);
+				if (!(bytes <= 0))
+					//Send response from server to client
+					bytes = send(new_fd, Request, bytes, 0);
+	    		
+				//Bytes received from the server
+				sprintf(byteSize, "%d\n", bytes);
+				strcat(logfile, byteSize);
+
+	        	printf("Connection %d closed for pid %d\n", new_fd, getpid());
+	        	memset(SnatRules, 0, BUFSIZE);
+	        	//Delete the SNAT rule since no longer needed
+	        	sprintf(SnatRules, "iptables -t nat -D POSTROUTING -p tcp -j SNAT --sport %d --to-source %s", ntohs(server_addr.sin_port), inet_ntoa(p_addr.sin_addr));
+			    printf("SNATRULES: %s\n", SnatRules);
+			    system(SnatRules);
+			    //Close the connection
+	            (void) close(new_fd); //Close the file descriptor for the child process
+	            //Write out to the logfile
+	            FILE * FileLog = fopen("logfile.txt", "a+");
+	            fprintf(FileLog, "%s", logfile);
+	            fclose(FileLog);
+	            //Child process exits
+	            //}while (pollRtn != 0);
             exit(0);
         }
         (void) close(new_fd);  // parent doesn't need this
@@ -329,94 +263,3 @@ void *get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-int connectsock(const char *URI)
-{
-
-    int sock;
-    int connectError; 
-
-    // ESTABLISH SOCKET
-    if((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
-        perror("socket");
-        return -1;
-    }
-    // 
-    int status;
-	struct addrinfo hints;
-	struct addrinfo *servinfo;  // will point to the result
-
-	// INPUT STRUCT getadderinfo()
-	memset(&hints, 0, sizeof hints); // make sure the struct is empty
-	hints.ai_family = AF_INET;  	 // don't care IPv4 or IPv6
-	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
-	hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
-
-	if ((status = getaddrinfo(URI, "80", &hints, &servinfo)) != 0) 
-	{
-	    fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
-	    return -1;
-	}
-
-	// CONNECT
-    connectError = connect(sock, servinfo->ai_addr, servinfo->ai_addrlen);
-    if (connectError == -1)
-    	return -1;
-
-    freeaddrinfo(servinfo); // free the linked-list
-
-    return sock; 
-}
-
-int ErrorHandle(int d, int code, int fd, char* Method, char* URI, char* Version)
-{
-    char error[BUFSIZE];
-    char errorMsg[BUFSIZE];
-    char length[256]; 
-    //have to build the header to send back to the client even for the error
-    if (code == 400)
-    {   
-        if (d == 1)
-        {
-            memcpy(error, "HTTP/1.1 400 Bad Request: Invalid Method: ", 42);
-            memcpy(error + strlen(error), Method, strlen(Method));
-        }
-        else if (d == 2)
-        {
-            memcpy(error, "HTTP/1.1 400 Bad Request: Invalid URI: ", 39);
-            memcpy(error + strlen(error), URI, strlen(URI));
-        }
-        else
-        {
-            memcpy(error, "HTTP/1.1 400 Bad Request: Invalid HTTP-Version: ", 47);
-            memcpy(error + strlen(error), Version, strlen(Version));
-        }
-    }
-
-    else if (code == 404)
-    {
-        memcpy(error, "HTTP/1.1 404 Not Found: ", 24);
-        memcpy(error + strlen(error), URI, strlen(URI));
-    }
-    else if (code == 500)
-        memcpy(error, "HTTP/1.1 500 Internal Server Error", 34);
-    else
-    {
-        memcpy(error, "HTTP/1.1 501 Not Implemented: ", 30);
-        memcpy(error + strlen(error), URI, strlen(URI));
-    }
-    memcpy(errorMsg, "<html><em> ", 11);
-    memcpy(errorMsg + 11, error, strlen(error));
-    memcpy(errorMsg + strlen(errorMsg), " </em></html>", 13);
-    sprintf(length, "%ld", strlen(errorMsg));
-    
-    error[strlen(error)] = '\n';    
-    memcpy(error + strlen(error), "Content-type: text/html\n", 24);
-    memcpy(error + strlen(error), "Content-length: ", 16);
-    memcpy(error + strlen(error), length, strlen(length));
-
-    error[strlen(error)] = '\n';
-    error[strlen(error)] = '\n';
-    send(fd, error, strlen(error), 0);
-    send(fd, errorMsg, strlen(errorMsg), 0);
-    return 0;
-}
